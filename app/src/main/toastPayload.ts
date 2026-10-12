@@ -8,9 +8,14 @@ export const MIN_TOAST_MS = 3000
 export const CHECKIN_TIMEOUT_MS = 30_000
 export const RESCUE_TIMEOUT_MS = 12_000
 export const TIME_UP_TIMEOUT_MS = 60_000
+export const DAY_START_TIMEOUT_MS = 60_000
 export const BREAK_MINUTES = 5
 
 const scaled = (ms: number, scale: number): number => Math.max(MIN_TOAST_MS, Math.round(ms / scale))
+
+export function dayStartToast(late: boolean, scale = 1): ToastPayload {
+  return { kind: 'day_start', late, timeoutMs: scaled(DAY_START_TIMEOUT_MS, scale) }
+}
 
 export function toastFor(effect: SessionEffect, snap: AppSnapshot, scale = 1): ToastPayload {
   switch (effect.kind) {
@@ -53,5 +58,7 @@ export function isToastStale(payload: ToastPayload, snap: AppSnapshot): boolean 
       return !active
     case 'break':
       return phase !== 'paused' || snap.breakOpen
+    case 'day_start':
+      return snap.dayOpen // 다른 경로(메인 창·단축키)로 이미 시작했으면 닫는다
   }
 }

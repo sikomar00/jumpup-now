@@ -21,7 +21,7 @@ export const DEFAULT_SETTINGS: Settings = {
   dayStartTime: '09:00',
   sessionMin: 25,
   checkinMin: 10,
-  shortcut: 'Ctrl+Alt+J',
+  shortcut: 'Alt+Shift+J',
   autoLaunch: false,
   onboarded: false,
   widgetPos: null

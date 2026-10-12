@@ -21,6 +21,12 @@ export function duration(ms: number): string {
   return `${Math.floor(min / 60)}시간 ${String(min % 60).padStart(2, '0')}분`
 }
 
+/** 착수 지연처럼 짧을 수 있는 시간: 1분 미만은 초 단위로 */
+export function shortDuration(ms: number): string {
+  if (ms < 60_000) return `${Math.max(1, Math.round(ms / 1000))}초`
+  return duration(ms)
+}
+
 export function dueText(due: number, now: number): { text: string; hot: boolean } {
   const d = daysUntil(due, now)
   if (d < 0) return { text: '지남', hot: true }

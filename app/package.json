@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "e2e": "node tests/e2e/smoke.mjs",
     "e2e:checkin": "node tests/e2e/checkin.mjs",
-    "e2e:all": "npm run e2e && npm run e2e:checkin"
+    "e2e:all": "npm run e2e && npm run e2e:checkin && npm run e2e:daily",
+    "e2e:daily": "node tests/e2e/daily.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

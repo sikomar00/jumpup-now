@@ -13,6 +13,7 @@ function snap(over: {
   phase?: AppSnapshot['session']['phase']
   checkinPending?: boolean
   breakOpen?: boolean
+  dayOpen?: boolean
   title?: string
 }): AppSnapshot {
   return {
@@ -20,7 +21,7 @@ function snap(over: {
     settings: { ...DEFAULT_SETTINGS, sessionMin: 25 },
     tasks: [],
     openTaskCount: 0,
-    dayOpen: true,
+    dayOpen: over.dayOpen ?? true,
     breakOpen: over.breakOpen ?? false,
     dayStartedAt: 0,
     session: {
@@ -34,6 +35,7 @@ function snap(over: {
       workMs: 0, dayMs: 0, breakMs: 0, availableMs: 0, ratio: 0,
       startLatenciesMs: [], medianStartLatencyMs: null, stuckCount: 0, sessionCount: 0
     },
+    sessions: [],
     notice: null
   }
 }
@@ -92,6 +94,12 @@ describe('isToastStale', () => {
       expect(isToastStale(p, snap({ phase: 'reflecting' }))).toBe(true)
       expect(isToastStale(p, snap({ phase: 'idle' }))).toBe(true)
     }
+  })
+
+  it('하루 시작 알림: 하루가 이미 열렸으면(다른 경로로 시작) 무효', () => {
+    const p: ToastPayload = { kind: 'day_start', late: false, timeoutMs: 1 }
+    expect(isToastStale(p, snap({ dayOpen: false, phase: 'idle' }))).toBe(false)
+    expect(isToastStale(p, snap({ dayOpen: true, phase: 'idle' }))).toBe(true)
   })
 
   it('휴식 제안: 정지 상태이고 휴식을 시작하기 전까지만 유효', () => {

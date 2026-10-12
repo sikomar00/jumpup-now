@@ -1,4 +1,5 @@
 // main ↔ renderer 계약. 타입과 채널 이름만 담는다(런타임 의존 없음).
+import type { SessionSummary } from '../domain/daySummary'
 import type { CheckinAnswer, GoalLink, StuckCause, TaskSize } from '../domain/events'
 import type { RecoTask } from '../domain/recommender'
 import type { SessionState } from '../domain/sessionMachine'
@@ -26,12 +27,30 @@ export interface AppSnapshot {
   sessionTask: Task | null
   reco: RecoView | null
   stats: DayStats
+  /** 오늘의 세션 기록 (하루 요약용) */
+  sessions: SessionSummary[]
   /** 복구 안내 등 일회성 한 줄 메시지 */
   notice: string | null
 }
 
+/** 설정 화면에서 바꿀 수 있는 항목 */
+export type SettingsPatch = Partial<
+  Pick<
+    Settings,
+    'goal' | 'successTargetPct' | 'dayStartTime' | 'sessionMin' | 'checkinMin' | 'shortcut' | 'autoLaunch'
+  >
+>
+
 export type Command =
-  | { type: 'complete_onboarding'; goal: string; successTargetPct: number; dayStartTime: string }
+  | {
+      type: 'complete_onboarding'
+      goal: string
+      successTargetPct: number
+      dayStartTime: string
+      /** 부팅 시 자동 실행 옵트인 */
+      autoLaunch?: boolean
+    }
+  | { type: 'update_settings'; patch: SettingsPatch }
   | { type: 'task_add'; title: string; due?: number; size?: TaskSize }
   | { type: 'task_done'; id: string }
   | { type: 'task_delete'; id: string }
@@ -57,9 +76,13 @@ export type ToastPayload =
   | { kind: 'rescue'; level: 1 | 2; step: string; timeoutMs: number }
   | { kind: 'break'; minutes: number }
   | { kind: 'time_up'; plannedMin: number; timeoutMs: number }
+  /** late: 지정 시각이 한참 지났는데 아직 시작하지 않은 경우 */
+  | { kind: 'day_start'; late: boolean; timeoutMs: number }
 
 /** 토스트 버튼이 main에 보내는 동작 */
 export const TOAST_ACTIONS = [
+  'start_day', // 하루 시작 알림: 하루 시작
+  'snooze', // 하루 시작 알림: 10분 뒤
   'ok', // 체크인: 진행 중
   'stuck', // 체크인: 막혔어요
   'dismiss', // 닫기 (막힘 대응 확인, 시간 종료 후 "조금 더")

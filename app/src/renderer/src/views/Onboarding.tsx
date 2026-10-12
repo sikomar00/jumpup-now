@@ -9,6 +9,7 @@ export function Onboarding({ run }: { run: Run }) {
   const [goal, setGoal] = useState('')
   const [time, setTime] = useState('09:00')
   const [target, setTarget] = useState(40)
+  const [autoLaunch, setAutoLaunch] = useState(false)
 
   return (
     <div className="stack" data-testid="onboarding">
@@ -67,6 +68,21 @@ export function Onboarding({ run }: { run: Run }) {
           <p className="lead">
             연결하지 않아도 바로 쓸 수 있습니다. AI 연결은 다음 단계에서 제공됩니다.
           </p>
+          <label className="row" style={{ alignItems: 'center', gap: 10 }}>
+            <input
+              type="checkbox"
+              className="check"
+              checked={autoLaunch}
+              onChange={(e) => setAutoLaunch(e.target.checked)}
+              data-testid="autolaunch"
+            />
+            <span>
+              컴퓨터를 켤 때 자동으로 실행
+              <span className="lead" style={{ display: 'block' }}>
+                하루 시작 알림을 놓치지 않습니다. 설정에서 언제든 끌 수 있어요.
+              </span>
+            </span>
+          </label>
           <button
             className="btn primary"
             onClick={() =>
@@ -74,7 +90,8 @@ export function Onboarding({ run }: { run: Run }) {
                 type: 'complete_onboarding',
                 goal,
                 successTargetPct: target,
-                dayStartTime: time
+                dayStartTime: time,
+                autoLaunch
               })
             }
           >

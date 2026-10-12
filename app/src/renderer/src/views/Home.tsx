@@ -1,16 +1,30 @@
 import type { AppSnapshot } from '../../../shared/ipc'
+import type { View } from '../App'
 import type { Run } from '../hooks'
 import { hhmm } from '../format'
 
 interface Props {
   snap: AppSnapshot
   run: Run
-  openTasks: () => void
+  go: (view: View) => void
 }
 
-export function Home({ snap, run, openTasks }: Props) {
-  const { dayOpen, breakOpen, reco, stats, settings, openTaskCount } = snap
+export function Home({ snap, run, go }: Props) {
+  const { dayOpen, breakOpen, reco, stats, settings, openTaskCount, sessions } = snap
   const pct = Math.round(stats.ratio * 100)
+  const openTasks = (): void => go('tasks')
+  const secondaryLinks = (
+    <>
+      {sessions.length > 0 && (
+        <button className="link" data-testid="open-summary" onClick={() => go('summary')}>
+          오늘 요약
+        </button>
+      )}
+      <button className="link" data-testid="open-settings" onClick={() => go('settings')}>
+        설정
+      </button>
+    </>
+  )
 
   if (!dayOpen) {
     return (
@@ -25,6 +39,7 @@ export function Home({ snap, run, openTasks }: Props) {
           <button className="link" onClick={openTasks}>
             할 일 목록 ({openTaskCount})
           </button>
+          {secondaryLinks}
         </div>
       </div>
     )
@@ -111,6 +126,7 @@ export function Home({ snap, run, openTasks }: Props) {
             <button className="link" data-testid="day-end" onClick={() => void run({ type: 'day_end' })}>
               하루 종료
             </button>
+            {secondaryLinks}
           </>
         )}
       </div>

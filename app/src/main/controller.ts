@@ -1,7 +1,9 @@
 // 앱 상태의 단일 출처. Electron에 의존하지 않으므로 단독으로 테스트할 수 있다.
 // 이벤트 로그 + 설정 + 세션 상태 머신을 묶고, 렌더러 명령(Command)을 검증해 적용한다.
 import { randomUUID } from 'node:crypto'
+import { dayStartPrompt, dateKey } from '../domain/dayStart'
 import { dayState } from '../domain/dayState'
+import { foldSessions } from '../domain/daySummary'
 import {
   makeEvent,
   type AppEvent,
@@ -20,7 +22,7 @@ import {
 } from '../domain/sessionMachine'
 import { computeStats } from '../domain/stats'
 import { foldTasks, openTasks, type Task } from '../domain/tasks'
-import type { Settings } from '../domain/settings'
+import { normalizeSettings, type Settings } from '../domain/settings'
 import type { AppSnapshot, Command, RecoView } from '../shared/ipc'
 import type { EventStore } from './store/eventStore'
 import type { SettingsStore } from './store/settingsStore'
@@ -34,6 +36,13 @@ export interface ControllerDeps {
   onChange?: (snapshot: AppSnapshot) => void
   /** 체크인·막힘 대응·휴식 제안 같은 사용자 알림이 필요할 때 호출 (토스트) */
   onEffect?: (effect: SessionEffect) => void
+  /** 하루 시작 알림을 띄울 시점이 되었을 때 (late: 지정 시각을 한참 넘김) */
+  onDayStartPrompt?: (info: { late: boolean }) => void
+  /**
+   * 설정이 바뀔 때 OS 쪽 반영(전역 단축키 등록, 자동 실행)을 맡는다. 던진 Error의 메시지는
+   * 사용자에게 보이며, 이 경우 설정은 저장되지 않는다.
+   */
+  applySettings?: (next: Settings, prev: Settings) => void
   /**
    * 세션·체크인 시간을 이 값으로 나눈다. 테스트에서 10분 간격을 수 초로 줄이는 용도이며
    * 사용자 설정이 아니다(기본 1).
@@ -43,6 +52,19 @@ export interface ControllerDeps {
 
 /** 1초 틱 사이가 이만큼 벌어지면 절전·정지가 있었던 것으로 본다. */
 const SLEEP_GAP_MS = 60_000
+/** 하루 시작 알림 판단은 전체 로그를 훑으므로 이 간격으로만 한다. */
+const PROMPT_CHECK_MS = 5000
+const SNOOZE_MS = 10 * 60_000
+/** 설정 검증 오류에 보여줄 항목 이름 */
+const SETTING_LABELS: Partial<Record<keyof Settings, string>> = {
+  goal: '큰 목표',
+  successTargetPct: '목표 실질 작업비율',
+  dayStartTime: '하루 시작 알림',
+  sessionMin: '세션 길이',
+  checkinMin: '체크인 간격',
+  shortcut: '전역 단축키',
+  autoLaunch: '자동 실행'
+}
 const TITLE_MAX = 200
 const OUTPUT_MAX = 500
 const SIZES: readonly TaskSize[] = ['small', 'medium', 'large']
@@ -70,6 +92,9 @@ export class AppController {
   private lastTickAt: number | null = null
   /** 연속 막힘으로 세션이 정지되어 휴식을 제안한 상태. 이때만 세션 중 휴식을 허용한다. */
   private stuckBreakPending = false
+  private promptedOn: string | null = null
+  private snoozeUntil: number | null = null
+  private lastPromptCheck: number | null = null
   private readonly now: () => number
   private readonly newId: () => string
   private readonly timeScale: number
@@ -97,10 +122,8 @@ export class AppController {
     const todayStart = startOfDay(now)
     const from =
       ds.dayOpen && ds.dayStartedAt !== null ? Math.min(ds.dayStartedAt, todayStart) : todayStart
-    const stats = computeStats(
-      this.events.filter((e) => e.t >= from),
-      now
-    )
+    const todayEvents = this.events.filter((e) => e.t >= from)
+    const stats = computeStats(todayEvents, now)
     return {
       now,
       settings: this.settings,
@@ -113,8 +136,33 @@ export class AppController {
       sessionTask: this.session.taskId ? (tasks.find((t) => t.id === this.session.taskId) ?? null) : null,
       reco: this.reco,
       stats,
+      sessions: foldSessions(todayEvents, tasks, now),
       notice: this.notice
     }
+  }
+
+  /** 앱이 사용자에게 알려야 할 한 줄 안내(예: 단축키 등록 실패)를 올린다. */
+  setNotice(message: string | null): void {
+    this.notice = message
+    this.deps.onChange?.(this.snapshot())
+  }
+
+  /**
+   * 전역 단축키·트레이 "지금 뭐 하지?": 하루가 열려 있고 쉬는 중이 아니며 세션이 없을 때
+   * 추천을 바로 띄운다. 그 외에는 아무 것도 하지 않는다(창을 앞으로 가져오는 것은 호출자 몫).
+   */
+  quickAsk(): void {
+    const ds = dayState(this.events)
+    if (!this.settings.onboarded || !ds.dayOpen || ds.breakOpen) return
+    if (this.session.phase !== 'idle' || this.reco) return
+    if (openTasks(foldTasks(this.events)).length === 0) return
+    this.showReco()
+    this.deps.onChange?.(this.snapshot())
+  }
+
+  /** 하루 시작 알림의 "10분 뒤" */
+  snoozeDayStart(): void {
+    this.snoozeUntil = this.now() + SNOOZE_MS / this.timeScale
   }
 
   /**
@@ -135,6 +183,7 @@ export class AppController {
     const now = this.now()
     const prev = this.lastTickAt
     this.lastTickAt = now
+    this.checkDayStartPrompt(now)
     if (this.session.phase !== 'running') return
 
     if (prev !== null && now - prev > SLEEP_GAP_MS) {
@@ -173,12 +222,37 @@ export class AppController {
       case 'complete_onboarding': {
         const goal = String(cmd.goal ?? '').trim()
         if (!goal) throw new Error('목표를 한 줄 입력하세요.')
-        this.settings = this.deps.settingsStore.update({
+        const prev = this.settings
+        const next = normalizeSettings({
+          ...prev,
           goal,
           successTargetPct: cmd.successTargetPct,
           dayStartTime: cmd.dayStartTime,
+          autoLaunch: cmd.autoLaunch ?? prev.autoLaunch,
           onboarded: true
         })
+        this.deps.applySettings?.(next, prev)
+        this.settings = this.deps.settingsStore.update(next)
+        return
+      }
+
+      case 'update_settings': {
+        const prev = this.settings
+        const next = normalizeSettings({ ...prev, ...cmd.patch })
+        // 범위를 벗어난 값은 조용히 기본값으로 바꾸지 않고 거부한다.
+        for (const [key, value] of Object.entries(cmd.patch)) {
+          const k = key as keyof Settings
+          if (next[k] !== value) throw new Error(`설정 값이 올바르지 않습니다: ${SETTING_LABELS[k] ?? key}`)
+        }
+        if (!next.goal.trim()) throw new Error('목표는 비워둘 수 없습니다.')
+        if (JSON.stringify(next) === JSON.stringify(prev)) return
+        this.deps.applySettings?.(next, prev) // 실패하면 던지므로 저장되지 않는다
+        this.settings = this.deps.settingsStore.update(next)
+        if (next.dayStartTime !== prev.dayStartTime) {
+          // 시각을 바꾸면 오늘도 새 시각에 다시 알릴 수 있어야 한다
+          this.promptedOn = null
+          this.snoozeUntil = null
+        }
         return
       }
 
@@ -309,6 +383,34 @@ export class AppController {
         this.notice = null
         return
     }
+  }
+
+  private checkDayStartPrompt(now: number): void {
+    if (!this.deps.onDayStartPrompt || !this.settings.onboarded) return
+    if (this.lastPromptCheck !== null && now - this.lastPromptCheck < PROMPT_CHECK_MS) return
+    this.lastPromptCheck = now
+
+    const todayStart = startOfDay(now)
+    let startedToday = false
+    for (let i = this.events.length - 1; i >= 0; i--) {
+      const e = this.events[i]!
+      if (e.type === 'day_start' && e.t >= todayStart) {
+        startedToday = true
+        break
+      }
+    }
+    const result = dayStartPrompt({
+      now,
+      dayStartTime: this.settings.dayStartTime,
+      dayOpen: dayState(this.events).dayOpen,
+      startedToday,
+      promptedOn: this.promptedOn,
+      snoozeUntil: this.snoozeUntil
+    })
+    if (!result.due) return
+    this.promptedOn = dateKey(now)
+    this.snoozeUntil = null
+    this.deps.onDayStartPrompt({ late: result.late })
   }
 
   private requireDayOpen(dayOpen: boolean): void {

@@ -12,7 +12,10 @@
 | `npm run typecheck` | 타입 검사 |
 | `npm run e2e` | 빌드된 앱을 실제로 띄워 하루 한 바퀴·위젯 검증 (`npm run build` 선행). 스크린샷은 `SHOTS_DIR` 또는 OS 임시 폴더 |
 | `npm run e2e:checkin` | 체크인 토스트·막힘 대응·연속 막힘 휴식·시간 종료 검증. 테스트 전용 `JUMPUP_TIME_SCALE=60`으로 시간을 60배 빠르게 돌림(약 1분 소요) |
-| `npm run e2e:all` | 위 e2e 둘 다 |
+| `npm run e2e:daily` | 하루 시작 알림(미루기)·트레이 상주·빠른 추천·설정·하루 요약 검증. `JUMPUP_TIME_SCALE=60`, `JUMPUP_E2E=1`(트레이·단축키 훅) 사용 |
+| `npm run e2e:all` | e2e 셋 모두 |
+
+테스트 전용 환경 변수: `JUMPUP_DATA_DIR`(데이터 경로), `JUMPUP_TIME_SCALE`(시간 배율), `JUMPUP_E2E=1`(e2e 훅 노출). 일반 사용에서는 설정하지 않는다.
 
 ## 데이터 위치
 `%APPDATA%/jumpup-now/` 아래 `events/YYYY-MM.jsonl`(이벤트 로그), `settings.json`.

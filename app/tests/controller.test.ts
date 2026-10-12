@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { DEFAULT_SETTINGS, type Settings } from '../src/domain/settings'
 import { AppController } from '../src/main/controller'
 import { EventStore } from '../src/main/store/eventStore'
 import { SettingsStore } from '../src/main/store/settingsStore'
@@ -386,6 +387,190 @@ describe('체크인·시간 종료·연속 막힘 (M4)', () => {
       ctrl.tick()
     }
     expect(effects).toEqual(['checkin_due']) // 10분이 아니라 10초 만에
+  })
+})
+
+describe('하루 시작 알림·빠른 추천·설정·요약 (M5)', () => {
+  function setup(opts: { applySettings?: (n: Settings, p: Settings) => void; timeScale?: number } = {}) {
+    const prompts: { late: boolean }[] = []
+    let n = 0
+    const ctrl = new AppController({
+      eventStore: new EventStore(join(dir, 'events')),
+      settingsStore: new SettingsStore(join(dir, 'settings.json')),
+      now: () => clock,
+      newId: () => `t${++n}`,
+      onDayStartPrompt: (info) => prompts.push(info),
+      ...(opts.applySettings ? { applySettings: opts.applySettings } : {}),
+      ...(opts.timeScale ? { timeScale: opts.timeScale } : {})
+    })
+    ctrl.init()
+    return { ctrl, prompts }
+  }
+  const tickFor = (ctrl: AppController, sec: number): void => {
+    for (let i = 0; i < sec; i++) {
+      clock += 1000
+      ctrl.tick()
+    }
+  }
+
+  it('온보딩 전에는 하루 시작 알림을 띄우지 않는다', () => {
+    clock = T0 + 10 * MIN // 09:10, 시작 시각(09:00) 이후
+    const { ctrl, prompts } = setup()
+    tickFor(ctrl, 30)
+    expect(prompts).toEqual([])
+  })
+
+  it('지정 시각 이후 앱을 켜면 "늦었다"로 한 번만 알린다', () => {
+    clock = T0 + 20 * MIN // 09:20
+    const { ctrl, prompts } = setup()
+    ctrl.dispatch(onboard) // dayStartTime 09:00
+    tickFor(ctrl, 30)
+    expect(prompts).toEqual([{ late: true }])
+  })
+
+  it('지정 시각 전에는 조용하다가 시각이 되면 알린다', () => {
+    clock = T0 - 60_000 // 08:59
+    const { ctrl, prompts } = setup()
+    ctrl.dispatch(onboard)
+    tickFor(ctrl, 30)
+    expect(prompts).toEqual([])
+    tickFor(ctrl, 60) // 09:00 지남
+    expect(prompts).toEqual([{ late: false }])
+  })
+
+  it('하루를 시작하면 더 이상 알리지 않고, 종료 후에도 재촉하지 않는다', () => {
+    clock = T0 + 20 * MIN
+    const { ctrl, prompts } = setup()
+    ctrl.dispatch(onboard)
+    ctrl.dispatch({ type: 'day_start' })
+    tickFor(ctrl, 30)
+    expect(prompts).toEqual([])
+    ctrl.dispatch({ type: 'day_end' })
+    tickFor(ctrl, 30)
+    expect(prompts).toEqual([])
+  })
+
+  it('미루기: 10분 뒤에 다시 알린다 (timeScale 적용)', () => {
+    clock = T0 + 20 * MIN
+    const { ctrl, prompts } = setup({ timeScale: 60 }) // 10분 → 10초
+    ctrl.dispatch(onboard)
+    tickFor(ctrl, 10)
+    expect(prompts).toHaveLength(1)
+    ctrl.snoozeDayStart()
+    tickFor(ctrl, 9)
+    expect(prompts).toHaveLength(1)
+    tickFor(ctrl, 6)
+    expect(prompts).toHaveLength(2)
+  })
+
+  it('알림 시각을 바꾸면 오늘 이미 알렸어도 새 시각에 다시 알릴 수 있다', () => {
+    clock = T0 + 20 * MIN // 09:20
+    const { ctrl, prompts } = setup()
+    ctrl.dispatch(onboard)
+    tickFor(ctrl, 10)
+    expect(prompts).toHaveLength(1)
+    ctrl.dispatch({ type: 'update_settings', patch: { dayStartTime: '09:15' } })
+    tickFor(ctrl, 10)
+    expect(prompts).toHaveLength(2)
+  })
+
+  it('quickAsk: 하루가 열려 있고 할 일이 있으면 추천을 띄운다, 아니면 아무 일도 없다', () => {
+    const { ctrl } = setup()
+    ctrl.dispatch(onboard)
+    ctrl.dispatch({ type: 'task_add', title: 'A' })
+    ctrl.quickAsk() // 하루 시작 전
+    expect(ctrl.snapshot().reco).toBeNull()
+    ctrl.dispatch({ type: 'day_start' })
+    ctrl.quickAsk()
+    expect(ctrl.snapshot().reco?.task.title).toBe('A')
+    const shown = ctrl.snapshot().reco
+    ctrl.quickAsk() // 이미 추천이 떠 있으면 바꾸지 않는다
+    expect(ctrl.snapshot().reco).toEqual(shown)
+  })
+
+  it('quickAsk: 세션 중이거나 휴식 중이면 무시한다', () => {
+    const { ctrl } = setup()
+    ctrl.dispatch(onboard)
+    ctrl.dispatch({ type: 'task_add', title: 'A' })
+    ctrl.dispatch({ type: 'day_start' })
+    ctrl.dispatch({ type: 'break_start' })
+    ctrl.quickAsk()
+    expect(ctrl.snapshot().reco).toBeNull()
+  })
+
+  it('설정 변경: 값이 저장되고 applySettings에 이전·다음 값이 전달된다', () => {
+    const calls: [string, string][] = []
+    const { ctrl } = setup({ applySettings: (next, prev) => calls.push([prev.shortcut, next.shortcut]) })
+    ctrl.dispatch(onboard)
+    ctrl.dispatch({ type: 'update_settings', patch: { shortcut: 'Ctrl+Shift+K', sessionMin: 50 } })
+    expect(ctrl.snapshot().settings).toMatchObject({ shortcut: 'Ctrl+Shift+K', sessionMin: 50 })
+    expect(calls.at(-1)).toEqual([DEFAULT_SETTINGS.shortcut, 'Ctrl+Shift+K'])
+    expect(setup().ctrl.snapshot().settings.sessionMin).toBe(50) // 재시작 후에도 유지
+  })
+
+  it('설정 변경: OS 반영(단축키 등록)이 실패하면 저장하지 않는다', () => {
+    const { ctrl } = setup({
+      applySettings: (next) => {
+        if (next.shortcut === 'Bad') throw new Error('단축키를 등록하지 못했어요')
+      }
+    })
+    ctrl.dispatch(onboard)
+    expect(() => ctrl.dispatch({ type: 'update_settings', patch: { shortcut: 'Bad' } })).toThrow('등록하지 못했어요')
+    expect(ctrl.snapshot().settings.shortcut).toBe(DEFAULT_SETTINGS.shortcut)
+    expect(setup().ctrl.snapshot().settings.shortcut).toBe(DEFAULT_SETTINGS.shortcut)
+  })
+
+  it('설정 변경: 범위를 벗어난 값과 빈 목표는 거부한다', () => {
+    const { ctrl } = setup()
+    ctrl.dispatch(onboard)
+    expect(() => ctrl.dispatch({ type: 'update_settings', patch: { checkinMin: 0 } })).toThrow('체크인 간격')
+    expect(() => ctrl.dispatch({ type: 'update_settings', patch: { sessionMin: 500 } })).toThrow('세션 길이')
+    expect(() => ctrl.dispatch({ type: 'update_settings', patch: { dayStartTime: '25:00' } })).toThrow('하루 시작 알림')
+    expect(() => ctrl.dispatch({ type: 'update_settings', patch: { goal: '  ' } })).toThrow('목표')
+    expect(ctrl.snapshot().settings.checkinMin).toBe(10)
+  })
+
+  it('온보딩에서 자동 실행을 켜면 applySettings가 autoLaunch=true로 호출된다', () => {
+    const seen: boolean[] = []
+    const { ctrl } = setup({ applySettings: (next) => seen.push(next.autoLaunch) })
+    ctrl.dispatch({ ...onboard, autoLaunch: true } as Command)
+    expect(seen).toEqual([true])
+    expect(ctrl.snapshot().settings.autoLaunch).toBe(true)
+  })
+
+  it('온보딩에서 자동 실행을 고르지 않으면 꺼진 채로 둔다', () => {
+    const seen: boolean[] = []
+    const { ctrl } = setup({ applySettings: (next) => seen.push(next.autoLaunch) })
+    ctrl.dispatch(onboard)
+    expect(seen).toEqual([false])
+  })
+
+  it('스냅샷의 오늘 세션 기록에 산출물과 목표 연결이 들어간다', () => {
+    const { ctrl } = setup()
+    ctrl.dispatch(onboard)
+    ctrl.dispatch({ type: 'task_add', title: 'A' })
+    ctrl.dispatch({ type: 'day_start' })
+    ctrl.dispatch({ type: 'reco_request' })
+    ctrl.dispatch({ type: 'session_start' })
+    clock += 12 * MIN
+    ctrl.dispatch({ type: 'session_end', reason: 'done' })
+    ctrl.dispatch({ type: 'save_reflection', output: '초안 완성', goalLink: 'yes' })
+    const { sessions } = ctrl.snapshot()
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0]).toMatchObject({ taskTitle: 'A', workMs: 12 * MIN, output: '초안 완성', goalLink: 'yes', endReason: 'done' })
+  })
+
+  it('setNotice는 안내 문구를 올리고 푸시한다', () => {
+    const pushes: AppSnapshot[] = []
+    const ctrl = new AppController({
+      eventStore: new EventStore(join(dir, 'events')),
+      settingsStore: new SettingsStore(join(dir, 'settings.json')),
+      now: () => clock,
+      onChange: (s) => pushes.push(s)
+    })
+    ctrl.init()
+    ctrl.setNotice('단축키 등록 실패')
+    expect(pushes.at(-1)?.notice).toBe('단축키 등록 실패')
   })
 })
 

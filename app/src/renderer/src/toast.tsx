@@ -59,6 +59,19 @@ function Toast() {
           </div>
         </div>
       )
+    case 'day_start':
+      return (
+        <div className="card" data-testid="toast-daystart">
+          <div className="h">JumpUp Now · 하루 시작</div>
+          <div className="m" data-testid="toast-msg">
+            {payload.late ? '오늘 아직 시작 안 했어요.' : '오늘 시작하세요.'}
+          </div>
+          <div className="btns">
+            <button className="p" data-testid="toast-startday" onClick={() => act('start_day')}>하루 시작</button>
+            <button data-testid="toast-snooze" onClick={() => act('snooze')}>10분 뒤</button>
+          </div>
+        </div>
+      )
     case 'time_up':
       return (
         <div className="card" data-testid="toast-timeup">

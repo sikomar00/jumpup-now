@@ -70,8 +70,19 @@ try {
   await page.getByRole('button', { name: '10:00' }).click()
   await page.getByRole('button', { name: '50%' }).click()
   await page.getByRole('button', { name: '다음' }).click()
+  // 자동 실행은 옵트인: 체크해도 개발(패키징 전) 실행에서는 OS 로그인 항목을 건드리지 않아야 한다.
+  assert.equal(await tid(page, 'autolaunch').isChecked(), false, '자동 실행은 기본 꺼짐')
+  await tid(page, 'autolaunch').check()
   await page.getByRole('button', { name: /나중에/ }).click()
   await tid(page, 'home-before-day').waitFor()
+  const savedSettings = JSON.parse(readFileSync(join(dataDir, 'settings.json'), 'utf8'))
+  assert.equal(savedSettings.autoLaunch, true, '선택한 자동 실행 값이 설정에 저장됨')
+  assert.equal(
+    await app.evaluate(({ app: a }) => a.getLoginItemSettings().openAtLogin),
+    false,
+    '패키징되지 않은 실행은 실제 로그인 항목을 등록하지 않는다'
+  )
+  log('자동 실행 옵트인: 설정엔 저장, 개발 실행에선 OS 로그인 항목 미변경')
   log('온보딩 완료 → 하루 시작 전 화면')
 
   await page.getByRole('button', { name: '하루 시작' }).click()
@@ -187,6 +198,11 @@ try {
   assert.match(await tid(page, 'ratio').innerText(), /목표 50%/)
   await shot(page, '08-home-after')
   await tid(page, 'day-end').click()
+  await tid(page, 'summary').waitFor() // 하루를 끝내면 오늘 요약이 바로 열린다
+  assert.match(await tid(page, 'summary-ratio').innerText(), /실질 작업 \d+%/)
+  assert.equal(await tid(page, 'stat-sessions').innerText(), '2개')
+  await shot(page, '09-summary')
+  await tid(page, 'back').click()
   await tid(page, 'home-before-day').waitFor()
   log('휴식 → 하루 종료')
   await app.close()

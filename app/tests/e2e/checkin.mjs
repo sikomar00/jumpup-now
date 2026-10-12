@@ -169,7 +169,15 @@ try {
   await tid(page, 'home-break').waitFor()
   await page.getByRole('button', { name: '휴식 끝' }).click()
   await tid(page, 'day-end').click()
+  await tid(page, 'summary').waitFor() // 하루를 끝내면 오늘 요약이 열린다
+  assert.equal(await tid(page, 'stat-stuck').innerText(), '3회', '요약의 막혔어요 횟수')
+  assert.equal(await tid(page, 'stat-sessions').innerText(), '2개')
+  const summaryList = await tid(page, 'summary-sessions').innerText()
+  assert.match(summaryList, /모호함/, '요약에 원인 태그가 표시된다')
+  await shot(page, 'm5-5-summary-stuck')
+  await tid(page, 'back').click()
   await tid(page, 'home-before-day').waitFor()
+  log('하루 종료 → 요약: 막혔어요 3회·세션 2개·원인 태그(모호함) 표시')
   await app.close()
   app = null
 
