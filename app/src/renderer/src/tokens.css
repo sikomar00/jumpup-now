@@ -1,0 +1,68 @@
+/* JumpUp Now 디자인 토큰 (디자인 시스템 v1). 메인 창·위젯·토스트가 공유한다.
+   색은 무채색 램프 + 포인트 하나. 다크는 prefers-color-scheme을 따른다.
+   모든 글자 조합 WCAG AA(4.5:1), 컨트롤 경계 3:1 이상 (대비 계산은 디자인 보드 01 참고). */
+
+/* Pretendard Variable (SIL OFL 1.1, 라이선스: app/licenses/Pretendard-OFL.txt) — 한글을 직접 입력하는 앱이라
+   조각 로딩 중 글꼴이 바뀌는 깜빡임이 없도록 서브셋이 아닌 단일 가변 파일을 쓴다. */
+@font-face {
+  font-family: 'Pretendard Variable';
+  font-style: normal;
+  font-weight: 45 920;
+  font-display: swap;
+  src: url('../../../node_modules/pretendard/dist/web/variable/woff2/PretendardVariable.woff2') format('woff2-variations');
+}
+
+:root {
+  --font: 'Pretendard Variable', Pretendard, 'Malgun Gothic', 'Apple SD Gothic Neo', system-ui, sans-serif;
+
+  --bg: #f5f5f2;
+  --panel: #ffffff;
+  --muted: #ecece7;
+  --line: #deded8;          /* 장식 구분선 전용 */
+  --line-strong: #85857f;   /* 컨트롤 경계 (3:1 이상) */
+  --ink: #1d1d1b;
+  --sub: #63635c;
+  --placeholder: #77776f;
+
+  --accent: #2b66e3;
+  --accent-hover: #2558c7;
+  --accent-ink: #ffffff;
+  --accent-soft: #eef3fe;
+  --accent-text: #2558c7;
+  --focus: #2558c7;
+
+  --warn: #b23a08;
+  --warn-soft: #fdeee6;
+
+  --shadow-float: 0 8px 24px rgba(20, 20, 19, 0.14), 0 1px 2px rgba(20, 20, 19, 0.08);
+
+  --radius-control: 10px;
+  --radius-button: 12px;
+  --radius-card: 16px;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141413;
+    --panel: #1e1e1c;
+    --muted: #2a2a27;
+    --line: #33332f;
+    --line-strong: #74746e;
+    --ink: #ededea;
+    --sub: #a3a39b;
+    --placeholder: #8c8c85;
+
+    --accent: #7ba5ff;
+    --accent-hover: #9dbdff;
+    --accent-ink: #0b1b3f;
+    --accent-soft: #1b2742;
+    --accent-text: #9dbdff;
+    --focus: #7ba5ff;
+
+    --warn: #fb9a55;
+    --warn-soft: #3a2418;
+
+    --shadow-float: 0 8px 24px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.4);
+  }
+}

@@ -1,37 +1,41 @@
-:root {
-  --panel: #ffffff; --ink: #1d1d1b; --sub: #6b6b66; --line: #d6d6d0;
-  --accent: #2f6fed; --accent-ink: #ffffff; --muted: #ecebe6;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --panel: #262624; --ink: #ededeb; --sub: #9a9a94; --line: #44443f;
-    --accent: #6c9bff; --accent-ink: #0d1b3d; --muted: #33332f;
-  }
-}
+@import './tokens.css';
+
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; height: 100%; background: transparent; overflow: hidden; }
-body { font: 14px/1.4 'Malgun Gothic', 'Apple SD Gothic Neo', system-ui, sans-serif; color: var(--ink); user-select: none; }
+body { font: 14px/1.4 var(--font); color: var(--ink); user-select: none; -webkit-font-smoothing: antialiased; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
+/* 토스트: 떠 있는 요소만 그림자. 등장 180ms (아래서 8px 슬라이드 + 페이드), 감소 모드는 페이드만 */
 .card {
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 14px 14px 12px;
+  gap: 8px;
+  padding: 14px 16px 12px;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+  border-radius: 14px;
+  box-shadow: var(--shadow-float);
+  animation: toast-in 180ms var(--ease) both;
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card { animation: toast-fade 80ms linear both; }
+  @keyframes toast-fade { from { opacity: 0; } to { opacity: 1; } }
 }
 .h { font-size: 12px; color: var(--sub); }
-.m { font-size: 15px; font-weight: 700; }
+.m { font-size: 15px; font-weight: 700; line-height: 1.4; }
 .s { font-size: 12px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .btns { display: flex; gap: 8px; margin-top: auto; }
 .btns button {
   flex: 1;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1.5px solid var(--line);
+  min-height: 40px;
+  padding: 0 10px;
+  border-radius: var(--radius-button);
+  border: 1.5px solid var(--line-strong);
   background: var(--panel);
   color: var(--ink);
   font: inherit;
@@ -39,11 +43,14 @@ body { font: 14px/1.4 'Malgun Gothic', 'Apple SD Gothic Neo', system-ui, sans-se
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+  transition: border-color 120ms var(--ease), background 120ms var(--ease);
 }
-.btns button:hover { border-color: var(--accent); }
+.btns button:hover { border-color: var(--ink); }
 .btns button.p { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btns button.p:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 .lnk {
-  background: none; border: 0; padding: 0; color: var(--sub); font: inherit; font-size: 12px;
-  text-decoration: underline; cursor: pointer; text-align: center;
+  align-self: center;
+  background: none; border: 0; padding: 0; min-height: 28px; color: var(--sub); font: inherit; font-size: 12px;
+  text-decoration: underline; text-underline-offset: 3px; cursor: pointer; text-align: center;
 }
 .lnk:hover { color: var(--ink); }

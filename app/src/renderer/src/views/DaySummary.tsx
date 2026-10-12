@@ -26,7 +26,7 @@ export function DaySummary({ snap, back }: { snap: AppSnapshot; back: () => void
 
       <div className="stack" style={{ gap: 8 }}>
         <div className="status">
-          <div style={{ fontSize: 28, fontWeight: 700 }} data-testid="summary-ratio">실질 작업 {pct}%</div>
+          <div style={{ fontSize: 34, fontWeight: 700, lineHeight: 1.2, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums' }} data-testid="summary-ratio">실질 작업 {pct}%</div>
           <span className="step">목표 {target}%</span>
         </div>
         <div className="progress" aria-hidden>

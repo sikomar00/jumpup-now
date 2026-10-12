@@ -28,6 +28,11 @@
 - 패키징된 실행파일에 e2e를 돌리려면: `JUMPUP_EXE="release/win-unpacked/JumpUp Now.exe" npm run e2e:all` (격리된 임시 데이터 경로를 쓰므로 실제 데이터·로그인 항목은 건드리지 않는다)
 - 설치 후 확인할 항목: [수동체크리스트.md](../수동체크리스트.md), 사용·판단 방법: [도그푸딩가이드.md](../도그푸딩가이드.md)
 
+## 디자인 시스템
+- 토큰은 `src/renderer/src/tokens.css` 한 곳(색·폰트·라디우스). 메인 창·위젯·토스트가 공유한다. 수정 시 [기술설계.md](../기술설계.md) §10-B의 대비 기준(글자 4.5:1, 컨트롤 경계 3:1)을 지킨다.
+- 폰트는 Pretendard Variable(OFL 1.1)을 번들한다. 라이선스 원문은 `licenses/Pretendard-OFL.txt`이며 설치파일에 함께 들어간다.
+- 아이콘: `npm run icons` → `build/icon.png`, `src/main/iconData.ts` 재생성(`tools/make-icons.cjs`, 외부 의존 없음).
+
 ## 데이터 위치
 설치된 앱: `%APPDATA%\JumpUp Now\` 아래 `events\YYYY-MM.jsonl`(이벤트 로그, 추가 전용), `settings.json`. 삭제해도 데이터는 남는다.
 개발·테스트에서 분리하려면 `JUMPUP_DATA_DIR` 환경 변수로 경로를 바꾼다. 이 변수가 지정된 실행은 **부팅 자동 실행을 OS에 반영하지 않는다**(테스트가 사용자의 로그인 항목을 바꾸지 못하도록).

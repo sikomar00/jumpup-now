@@ -58,6 +58,27 @@ try {
   let { app, page } = await launch()
   await tid(page, 'onboarding').waitFor()
   await shot(page, '01-onboarding')
+
+  // ── 디자인 시스템 약속(번들 폰트·포커스 링)이 실제 렌더에 적용되는지 ──
+  const design = await page.evaluate(async () => {
+    await document.fonts.ready
+    const pretendard = [...document.fonts].find((f) => f.family.includes('Pretendard'))
+    const input = document.querySelector('input')
+    const cs = input ? getComputedStyle(input) : null
+    return {
+      fontLoaded: pretendard?.status === 'loaded',
+      bodyFont: getComputedStyle(document.body).fontFamily,
+      outlineStyle: cs?.outlineStyle,
+      // Chromium은 외곽선 두께를 장치 픽셀 정수로 맞춘다(125% 배율에서 2px → 1.6px). 배율과 무관하게 비교한다.
+      outlineWidth: cs ? parseFloat(cs.outlineWidth) : 0,
+      inputMinHeight: cs?.minHeight
+    }
+  })
+  assert.equal(design.fontLoaded, true, `Pretendard 번들 폰트가 로드되어야 한다 (${design.bodyFont})`)
+  assert.equal(design.outlineStyle, 'solid', '입력 포커스 링은 실선')
+  assert.ok(design.outlineWidth >= 1.5 && design.outlineWidth <= 2, `포커스 링 두께 약 2px: ${design.outlineWidth}`)
+  assert.equal(design.inputMinHeight, '48px', '입력 높이 48')
+  log(`디자인: Pretendard 번들 폰트 로드, 포커스 링 ${design.outlineWidth}px(2px 장치 픽셀 정수화), 입력 높이 48`)
   await page.getByLabel('큰 목표').fill('3개월 안에 포트폴리오 완성')
   await page.getByRole('button', { name: '다음' }).click()
   await page.getByRole('button', { name: '10:00' }).click()
@@ -118,6 +139,8 @@ try {
   assert.equal(ws.focused, false, '위젯이 포커스를 빼앗지 않는다')
   assert.match(await tid(widget, 'widget-timer').innerText(), /^\d\d:\d\d$/)
   assert.equal(await widget.locator('.n').innerText(), '보고서 개요 쓰기')
+  const pauseBox = await tid(widget, 'widget-pause').boundingBox()
+  assert.ok(pauseBox && Math.round(pauseBox.height) === 32 && pauseBox.width >= 32, `위젯 버튼은 32px: ${pauseBox?.width}×${pauseBox?.height}`)
   await widget.screenshot({ path: join(shots, '05b-widget.png') })
   log('위젯 표시: 항상 위·포커스 비침범·현재 할 일·경과시간')
 

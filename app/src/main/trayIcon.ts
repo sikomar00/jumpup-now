@@ -1,14 +1,15 @@
-// 트레이·창 아이콘. 외부 에셋 파일 없이 쓰도록 32x32 PNG(파란 원 + 위쪽 화살표)를 내장한다.
+// 트레이·창 아이콘. 외부 에셋 파일 없이 쓰도록 PNG를 base64로 내장한다(iconData.ts, tools/make-icons.cjs로 생성).
 import { nativeImage, type NativeImage } from 'electron'
+import { APP_ICON_64_BASE64, TRAY_ICON_32_BASE64 } from './iconData'
 
-const PNG_BASE64 =
-  'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAA+UlEQVR42s2X2w3DIAxFWYUJECMwEUuwArOwAitkCCbgo1UkUKOUFrg2LZb8lcc9iY0fQoCmbJLKJl1citVWhJyyKSqbsrLpcfNcrp33aE5ho2wKDcGen88YqrgHhO/u0fhGBvHqcThPivjBKF79GIJg/vK3P/GLmGM5UbJ96mXVAAjTAgiIOAgRWkUGFgch9BXAUcUBCDed+aM2fSI+1HZIfAIiXwsPq/gEhOwmINW6ifgNgMt6ABKpaMQj+ArBaBIuAMikBsQAEKFCxAjg4FLMBKD3aUZIOyYCGPJAQgDwLCMZuQFtO5T+fSzfYjHZZjXbYjldvZ4/AXIvMH0FKnPtAAAAAElFTkSuQmCC'
+const fromBase64 = (b64: string): NativeImage => nativeImage.createFromBuffer(Buffer.from(b64, 'base64'))
 
+/** 창·작업 표시줄용 (계단 3단) */
 export function appIcon(): NativeImage {
-  return nativeImage.createFromBuffer(Buffer.from(PNG_BASE64, 'base64'))
+  return fromBase64(APP_ICON_64_BASE64)
 }
 
-/** 트레이는 16x16이 기본이라 줄여서 쓴다(고해상도 화면에서도 선명하도록 원본은 32x32). */
+/** 트레이는 16x16이 기본이라 줄여서 쓴다. 작은 크기에서 뭉개지지 않도록 계단 2단·굵은 선 전용 변형(32px 원본)을 쓴다. */
 export function trayIcon(): NativeImage {
-  return appIcon().resize({ width: 16, height: 16 })
+  return fromBase64(TRAY_ICON_32_BASE64).resize({ width: 16, height: 16 })
 }
