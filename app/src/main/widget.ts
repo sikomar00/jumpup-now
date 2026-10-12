@@ -39,7 +39,10 @@ export class WidgetWindow {
 
   /** 스냅샷에 맞춰 보이거나 숨긴다. */
   sync(snapshot: AppSnapshot): void {
-    const active = snapshot.session.phase === 'running' || snapshot.session.phase === 'paused'
+    // 휴식 중에는 세션이 정지 상태로 남아 있어도 위젯을 숨긴다.
+    const active =
+      (snapshot.session.phase === 'running' || snapshot.session.phase === 'paused') &&
+      !snapshot.breakOpen
     if (active) this.show()
     else this.hide()
   }

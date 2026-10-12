@@ -38,6 +38,8 @@ export type SessionAction =
   | { type: 'answer_checkin'; answer: CheckinAnswer }
   | { type: 'end'; reason: 'done' | 'timeout' | 'manual' }
   | { type: 'save_reflection'; output: string; goalLink?: GoalLink; cause?: StuckCause }
+  /** 새 하루 시작 등으로 연속 막힘 카운터를 비운다. */
+  | { type: 'reset_streak' }
 
 export type SessionEffect =
   | { kind: 'checkin_due' }
@@ -87,6 +89,8 @@ export function reduce(state: SessionState, action: SessionAction, now: number):
       return {
         state: {
           ...initialSessionState(),
+          // 25분 세션에 10분 체크인이면 한 세션의 체크인은 2번뿐이라, "연속 막힘"은 세션을 넘어 센다.
+          stuckStreak: state.stuckStreak,
           phase: 'running',
           taskId: action.taskId,
           plannedMin: action.plannedMin,
@@ -204,7 +208,14 @@ export function reduce(state: SessionState, action: SessionAction, now: number):
         ...(action.goalLink ? { goalLink: action.goalLink } : {}),
         ...(action.cause ? { cause: action.cause } : {})
       }
-      return { state: initialSessionState(), events: [ev(body)], effects: [] }
+      return {
+        state: { ...initialSessionState(), stuckStreak: state.stuckStreak },
+        events: [ev(body)],
+        effects: []
+      }
     }
+
+    case 'reset_streak':
+      return state.stuckStreak === 0 ? none(state) : { state: { ...state, stuckStreak: 0 }, events: [], effects: [] }
   }
 }

@@ -10,7 +10,9 @@
 | `npm run build` | 프로덕션 빌드 → `out/` |
 | `npm test` | 단위·통합 테스트 (Vitest) |
 | `npm run typecheck` | 타입 검사 |
-| `npm run e2e` | 빌드된 앱을 실제로 띄워 하루 한 바퀴 검증 (`npm run build` 선행). 스크린샷은 `SHOTS_DIR` 또는 OS 임시 폴더 |
+| `npm run e2e` | 빌드된 앱을 실제로 띄워 하루 한 바퀴·위젯 검증 (`npm run build` 선행). 스크린샷은 `SHOTS_DIR` 또는 OS 임시 폴더 |
+| `npm run e2e:checkin` | 체크인 토스트·막힘 대응·연속 막힘 휴식·시간 종료 검증. 테스트 전용 `JUMPUP_TIME_SCALE=60`으로 시간을 60배 빠르게 돌림(약 1분 소요) |
+| `npm run e2e:all` | 위 e2e 둘 다 |
 
 ## 데이터 위치
 `%APPDATA%/jumpup-now/` 아래 `events/YYYY-MM.jsonl`(이벤트 로그), `settings.json`.

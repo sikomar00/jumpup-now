@@ -15,6 +15,7 @@ import {
   reduce,
   type ReduceResult,
   type SessionAction,
+  type SessionEffect,
   type SessionState
 } from '../domain/sessionMachine'
 import { computeStats } from '../domain/stats'
@@ -31,6 +32,13 @@ export interface ControllerDeps {
   newId?: () => string
   /** 상태가 바뀔 때마다 호출 (렌더러로 푸시) */
   onChange?: (snapshot: AppSnapshot) => void
+  /** 체크인·막힘 대응·휴식 제안 같은 사용자 알림이 필요할 때 호출 (토스트) */
+  onEffect?: (effect: SessionEffect) => void
+  /**
+   * 세션·체크인 시간을 이 값으로 나눈다. 테스트에서 10분 간격을 수 초로 줄이는 용도이며
+   * 사용자 설정이 아니다(기본 1).
+   */
+  timeScale?: number
 }
 
 /** 1초 틱 사이가 이만큼 벌어지면 절전·정지가 있었던 것으로 본다. */
@@ -60,12 +68,16 @@ export class AppController {
   private rejected: string[] = []
   private notice: string | null = null
   private lastTickAt: number | null = null
+  /** 연속 막힘으로 세션이 정지되어 휴식을 제안한 상태. 이때만 세션 중 휴식을 허용한다. */
+  private stuckBreakPending = false
   private readonly now: () => number
   private readonly newId: () => string
+  private readonly timeScale: number
 
   constructor(private readonly deps: ControllerDeps) {
     this.now = deps.now ?? Date.now
     this.newId = deps.newId ?? randomUUID
+    this.timeScale = deps.timeScale && deps.timeScale > 0 ? deps.timeScale : 1
     this.settings = deps.settingsStore.load()
   }
 
@@ -123,10 +135,17 @@ export class AppController {
     const now = this.now()
     const prev = this.lastTickAt
     this.lastTickAt = now
-    if (prev !== null && now - prev > SLEEP_GAP_MS && this.session.phase === 'running') {
+    if (this.session.phase !== 'running') return
+
+    if (prev !== null && now - prev > SLEEP_GAP_MS) {
       this.runSession({ type: 'pause', cause: 'suspend' }, prev)
       this.deps.onChange?.(this.snapshot())
+      return
     }
+    // 체크인 시각·계획 시간 도달 여부. 상태가 바뀐 경우에만 푸시한다.
+    const before = this.session
+    this.runSession({ type: 'tick' })
+    if (this.session !== before) this.deps.onChange?.(this.snapshot())
   }
 
   saveWidgetPos(pos: { x: number; y: number }): void {
@@ -182,7 +201,10 @@ export class AppController {
       }
 
       case 'day_start':
-        if (!ds.dayOpen) this.append({ type: 'day_start' })
+        if (!ds.dayOpen) {
+          this.append({ type: 'day_start' })
+          this.runSession({ type: 'reset_streak' }) // 어제의 막힘을 오늘로 가져오지 않는다
+        }
         return
 
       case 'day_end':
@@ -193,15 +215,25 @@ export class AppController {
         this.rejected = []
         return
 
-      case 'break_start':
+      case 'break_start': {
         this.requireDayOpen(ds.dayOpen)
-        if (this.session.phase !== 'idle') throw new Error('진행 중인 세션을 먼저 끝내세요.')
+        const stuckBreak = this.session.phase === 'paused' && this.stuckBreakPending
+        if (this.session.phase !== 'idle' && !stuckBreak) {
+          throw new Error('진행 중인 세션을 먼저 끝내세요.')
+        }
         if (!ds.breakOpen) this.append({ type: 'break_start' })
         this.reco = null
         return
+      }
 
       case 'break_end':
         if (ds.breakOpen) this.append({ type: 'break_end' })
+        if (this.stuckBreakPending && this.session.phase === 'paused') {
+          // 연속 막힘 뒤 휴식을 마쳤다: 세션을 정리(회고)하고, 막혔던 항목은 뒤로 미룬다.
+          if (this.session.taskId) this.rejected.push(this.session.taskId)
+          this.runSession({ type: 'end', reason: 'manual' })
+        }
+        this.stuckBreakPending = false
         return
 
       case 'reco_request':
@@ -224,11 +256,12 @@ export class AppController {
         if (ds.breakOpen) throw new Error('휴식 중입니다. 휴식을 끝내세요.')
         if (!this.reco) throw new Error('먼저 추천을 받으세요.')
         const taskId = this.reco.task.id
+        this.stuckBreakPending = false
         this.runSession({
           type: 'start',
           taskId,
-          plannedMin: this.settings.sessionMin,
-          checkinMin: this.settings.checkinMin
+          plannedMin: this.settings.sessionMin / this.timeScale,
+          checkinMin: this.settings.checkinMin / this.timeScale
         })
         this.reco = null
         this.rejected = []
@@ -240,12 +273,20 @@ export class AppController {
         return
 
       case 'session_resume':
+        if (ds.breakOpen) throw new Error('휴식 중입니다. 휴식을 끝내세요.')
+        this.stuckBreakPending = false
         this.runSession({ type: 'resume' })
+        return
+
+      case 'answer_checkin':
+        if (!['ok', 'stuck', 'timeout'].includes(cmd.answer)) throw new Error('알 수 없는 응답입니다.')
+        this.runSession({ type: 'answer_checkin', answer: cmd.answer })
         return
 
       case 'session_end': {
         const taskId = this.session.taskId
         const before = this.session.phase
+        this.stuckBreakPending = false
         this.runSession({ type: 'end', reason: cmd.reason })
         if (cmd.reason === 'done' && taskId && before !== 'idle') {
           this.append({ type: 'task_done', id: taskId })
@@ -282,7 +323,15 @@ export class AppController {
     const result = reduce(this.session, action, at)
     this.session = result.state
     this.record(result.events)
+    this.emit(result.effects)
     return result
+  }
+
+  private emit(effects: readonly SessionEffect[]): void {
+    for (const effect of effects) {
+      if (effect.kind === 'suggest_break') this.stuckBreakPending = true
+      this.deps.onEffect?.(effect)
+    }
   }
 
   private showReco(prevId?: string): void {

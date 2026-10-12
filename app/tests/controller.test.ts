@@ -192,6 +192,203 @@ describe('하루·휴식 규칙', () => {
   })
 })
 
+describe('체크인·시간 종료·연속 막힘 (M4)', () => {
+  function setup() {
+    const effects: string[] = []
+    const pushes: AppSnapshot[] = []
+    let n = 0
+    const ctrl = new AppController({
+      eventStore: new EventStore(join(dir, 'events')),
+      settingsStore: new SettingsStore(join(dir, 'settings.json')),
+      now: () => clock,
+      newId: () => `t${++n}`,
+      onChange: (s) => pushes.push(s),
+      onEffect: (e) => effects.push(e.kind === 'rescue' ? `rescue${e.level}` : e.kind)
+    })
+    ctrl.init()
+    ctrl.dispatch(onboard)
+    ctrl.dispatch({ type: 'task_add', title: 'A', size: 'small' })
+    ctrl.dispatch({ type: 'task_add', title: 'B', size: 'large' })
+    ctrl.dispatch({ type: 'day_start' })
+    ctrl.dispatch({ type: 'reco_request' })
+    ctrl.dispatch({ type: 'session_start' })
+    return { ctrl, effects, pushes }
+  }
+  /** 1초 간격으로 틱을 돌리며 시간을 흘린다(정상 틱이라 소급 정지가 발생하지 않는다). */
+  const advance = (ctrl: AppController, minutes: number): void => {
+    for (let i = 0; i < minutes * 60; i++) {
+      clock += 1000
+      ctrl.tick()
+    }
+  }
+
+  it('10분 경과 시 체크인 효과가 한 번 나온다', () => {
+    const { ctrl, effects } = setup()
+    advance(ctrl, 9)
+    expect(effects).toEqual([])
+    advance(ctrl, 1)
+    expect(effects).toEqual(['checkin_due'])
+    advance(ctrl, 5) // 응답 대기 중에는 중복 알림 없음
+    expect(effects).toEqual(['checkin_due'])
+  })
+
+  it('틱 중 체크인이 울리면 상태가 푸시되어 응답 대기 상태가 화면에 반영된다', () => {
+    const { ctrl, pushes } = setup()
+    const before = pushes.length
+    advance(ctrl, 10)
+    expect(pushes.length).toBe(before + 1)
+    expect(pushes.at(-1)!.session.checkinPending).toBe(true)
+  })
+
+  it('진행 중 응답은 기록되고 다음 체크인은 20분에 울린다', () => {
+    const { ctrl, effects } = setup()
+    advance(ctrl, 10)
+    ctrl.dispatch({ type: 'answer_checkin', answer: 'ok' })
+    advance(ctrl, 10)
+    expect(effects).toEqual(['checkin_due', 'checkin_due'])
+  })
+
+  it('25분이 되면 시간 종료 효과가 나오고, 마무리하면 timeout으로 끝난다', () => {
+    const { ctrl, effects } = setup()
+    for (const m of [10, 10]) {
+      advance(ctrl, m)
+      ctrl.dispatch({ type: 'answer_checkin', answer: 'ok' })
+    }
+    advance(ctrl, 5)
+    expect(effects).toContain('time_up')
+    ctrl.dispatch({ type: 'session_end', reason: 'timeout' })
+    expect(ctrl.snapshot().session.phase).toBe('reflecting')
+  })
+
+  it('막혔어요 1·2회는 대응 효과, 3회 연속이면 휴식 제안과 함께 세션이 정지된다', () => {
+    const { ctrl, effects } = setup()
+    for (let i = 0; i < 3; i++) {
+      advance(ctrl, 10)
+      ctrl.dispatch({ type: 'answer_checkin', answer: 'stuck' })
+    }
+    // 계획 시간(25분)이 20분 체크인과 30분 체크인 사이에 끼어든다
+    expect(effects).toEqual(['checkin_due', 'rescue1', 'checkin_due', 'rescue2', 'time_up', 'checkin_due', 'suggest_break'])
+    const s = ctrl.snapshot()
+    expect(s.session.phase).toBe('paused')
+    expect(s.session.pauseCause).toBe('user')
+    expect(s.stats.stuckCount).toBe(3)
+  })
+
+  it('연속 막힘은 세션을 넘어 센다: 한 세션의 체크인은 2번뿐이므로(25분/10분) 다음 세션까지 이어진다', () => {
+    const { ctrl, effects } = setup()
+    for (let i = 0; i < 2; i++) {
+      advance(ctrl, 10)
+      ctrl.dispatch({ type: 'answer_checkin', answer: 'stuck' })
+    }
+    ctrl.dispatch({ type: 'session_end', reason: 'manual' })
+    ctrl.dispatch({ type: 'save_reflection', output: '' })
+    ctrl.dispatch({ type: 'reco_request' })
+    ctrl.dispatch({ type: 'session_start' })
+    advance(ctrl, 10)
+    ctrl.dispatch({ type: 'answer_checkin', answer: 'stuck' })
+    expect(effects.at(-1)).toBe('suggest_break')
+    expect(ctrl.snapshot().session.phase).toBe('paused')
+  })
+
+  it('"진행 중" 응답이나 새 하루 시작은 연속 막힘을 끊는다', () => {
+    const a = setup()
+    advance(a.ctrl, 10)
+    a.ctrl.dispatch({ type: 'answer_checkin', answer: 'stuck' })
+    advance(a.ctrl, 10)
+    a.ctrl.dispatch({ type: 'answer_checkin', answer: 'ok' })
+    expect(a.ctrl.snapshot().session.stuckStreak).toBe(0)
+
+    const b = setup()
+    advance(b.ctrl, 10)
+    b.ctrl.dispatch({ type: 'answer_checkin', answer: 'stuck' })
+    b.ctrl.dispatch({ type: 'session_end', reason: 'manual' })
+    b.ctrl.dispatch({ type: 'save_reflection', output: '' })
+    expect(b.ctrl.snapshot().session.stuckStreak).toBe(1) // 세션이 끝나도 유지
+    b.ctrl.dispatch({ type: 'day_end' })
+    b.ctrl.dispatch({ type: 'day_start' })
+    expect(b.ctrl.snapshot().session.stuckStreak).toBe(0) // 새 하루는 0부터
+  })
+
+  function stuckThreeTimes() {
+    const made = setup()
+    for (let i = 0; i < 3; i++) {
+      advance(made.ctrl, 10)
+      made.ctrl.dispatch({ type: 'answer_checkin', answer: 'stuck' })
+    }
+    return made
+  }
+
+  it('연속 막힘 뒤에는 정지된 세션에서도 휴식을 시작할 수 있고, 휴식 중엔 재개할 수 없다', () => {
+    const { ctrl } = stuckThreeTimes()
+    ctrl.dispatch({ type: 'break_start' })
+    expect(ctrl.snapshot().breakOpen).toBe(true)
+    expect(() => ctrl.dispatch({ type: 'session_resume' })).toThrow('휴식')
+  })
+
+  it('휴식이 끝나면 세션이 정리(회고)되고, 막혔던 항목은 뒤로 밀려 다른 할 일이 추천된다', () => {
+    const { ctrl } = stuckThreeTimes()
+    ctrl.dispatch({ type: 'break_start' })
+    clock += 5 * MIN
+    ctrl.dispatch({ type: 'break_end' })
+    expect(ctrl.snapshot().session.phase).toBe('reflecting')
+    ctrl.dispatch({ type: 'save_reflection', output: '막혔음', cause: 'vague' })
+    ctrl.dispatch({ type: 'reco_request' })
+    expect(ctrl.snapshot().reco?.task.title).toBe('B') // A는 막혔으므로 B가 먼저
+  })
+
+  it('휴식 제안을 거절하고 계속하기를 누르면 세션이 재개된다', () => {
+    const { ctrl } = stuckThreeTimes()
+    ctrl.dispatch({ type: 'session_resume' })
+    expect(ctrl.snapshot().session.phase).toBe('running')
+    expect(() => ctrl.dispatch({ type: 'break_start' })).toThrow('세션')
+  })
+
+  it('연속 막힘이 아닌 일반 정지 상태에서는 세션 중 휴식을 거부한다', () => {
+    const { ctrl } = setup()
+    ctrl.dispatch({ type: 'session_pause' })
+    expect(() => ctrl.dispatch({ type: 'break_start' })).toThrow('세션')
+  })
+
+  it('응답 시간 초과(timeout)는 막힘 카운터를 바꾸지 않고 다음 체크인을 예약한다', () => {
+    const { ctrl, effects } = setup()
+    advance(ctrl, 10)
+    ctrl.dispatch({ type: 'answer_checkin', answer: 'timeout' })
+    expect(ctrl.snapshot().stats.stuckCount).toBe(0)
+    advance(ctrl, 10)
+    expect(effects.filter((e) => e === 'checkin_due')).toHaveLength(2)
+  })
+
+  it('대기 중이 아닌 체크인 응답은 조용히 무시된다', () => {
+    const { ctrl } = setup()
+    expect(() => ctrl.dispatch({ type: 'answer_checkin', answer: 'stuck' })).not.toThrow()
+    expect(ctrl.snapshot().stats.stuckCount).toBe(0)
+  })
+
+  it('timeScale을 주면 세션·체크인 시간이 그만큼 줄어든다', () => {
+    const effects: string[] = []
+    let n = 0
+    const ctrl = new AppController({
+      eventStore: new EventStore(join(dir, 'events')),
+      settingsStore: new SettingsStore(join(dir, 'settings.json')),
+      now: () => clock,
+      newId: () => `s${++n}`,
+      onEffect: (e) => effects.push(e.kind),
+      timeScale: 60
+    })
+    ctrl.init()
+    ctrl.dispatch(onboard)
+    ctrl.dispatch({ type: 'task_add', title: 'A' })
+    ctrl.dispatch({ type: 'day_start' })
+    ctrl.dispatch({ type: 'reco_request' })
+    ctrl.dispatch({ type: 'session_start' })
+    for (let i = 0; i < 10; i++) {
+      clock += 1000
+      ctrl.tick()
+    }
+    expect(effects).toEqual(['checkin_due']) // 10분이 아니라 10초 만에
+  })
+})
+
 describe('절전·정지 처리', () => {
   function runningSession() {
     const made = make()

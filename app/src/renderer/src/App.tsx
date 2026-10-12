@@ -18,6 +18,9 @@ export function App() {
     body = <Onboarding run={run} />
   } else if (view === 'tasks') {
     body = <Tasks snap={snap} run={run} back={() => setView('home')} />
+  } else if (snap.breakOpen) {
+    // 연속 막힘 뒤 휴식처럼 세션이 정지된 채 휴식 중일 때도 휴식 화면을 먼저 보여준다.
+    body = <Home snap={snap} run={run} openTasks={() => setView('tasks')} />
   } else if (snap.session.phase === 'running' || snap.session.phase === 'paused') {
     body = <SessionView snap={snap} run={run} />
   } else if (snap.session.phase === 'reflecting') {

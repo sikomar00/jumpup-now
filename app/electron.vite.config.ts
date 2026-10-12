@@ -13,10 +13,11 @@ export default defineConfig({
     plugins: [react()],
     build: {
       rollupOptions: {
-        // 메인 창과 위젯 창, 두 개의 HTML 진입점
+        // 메인 창·위젯·토스트, 세 개의 HTML 진입점
         input: {
           index: resolve(__dirname, 'src/renderer/index.html'),
-          widget: resolve(__dirname, 'src/renderer/widget.html')
+          widget: resolve(__dirname, 'src/renderer/widget.html'),
+          toast: resolve(__dirname, 'src/renderer/toast.html')
         }
       }
     }

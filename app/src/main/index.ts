@@ -1,17 +1,29 @@
 import { app, BrowserWindow, ipcMain, powerMonitor, shell } from 'electron'
 import { join } from 'node:path'
 import { HEARTBEAT_MS } from '../domain/recovery'
-import { CHANNELS, type AppSnapshot, type Command, type CommandResult } from '../shared/ipc'
+import {
+  CHANNELS,
+  TOAST_ACTIONS,
+  type AppSnapshot,
+  type Command,
+  type CommandResult,
+  type ToastAction
+} from '../shared/ipc'
 import { AppController } from './controller'
 import { EventStore } from './store/eventStore'
 import { SettingsStore } from './store/settingsStore'
+import { ToastManager } from './toast'
+import { toastFor } from './toastPayload'
 import { WidgetWindow } from './widget'
 
 // 테스트·개발에서 실제 사용자 데이터와 섞이지 않도록 데이터 경로를 바꿀 수 있다.
 if (process.env.JUMPUP_DATA_DIR) app.setPath('userData', process.env.JUMPUP_DATA_DIR)
+// 테스트 전용: 세션·체크인 시간을 N배 빠르게 (예: 60이면 10분 → 10초)
+const timeScale = Number(process.env.JUMPUP_TIME_SCALE) || 1
 
 let mainWindow: BrowserWindow | null = null
 let widget: WidgetWindow | null = null
+let toasts: ToastManager | null = null
 let controller: AppController | null = null
 let heartbeatTimer: NodeJS.Timeout | null = null
 let tickTimer: NodeJS.Timeout | null = null
@@ -31,10 +43,38 @@ function onStateChange(snapshot: AppSnapshot): void {
   const widgetWin = widget?.window
   if (widgetWin && !widgetWin.isDestroyed()) widgetWin.webContents.send(CHANNELS.state, snapshot)
   widget?.sync(snapshot)
+  toasts?.sync(snapshot)
 
   // 세션이 끝나면 회고를 쓸 수 있도록 메인 창을 앞으로 가져온다.
   if (snapshot.session.phase === 'reflecting' && lastPhase !== 'reflecting') focusMainWindow()
   lastPhase = snapshot.session.phase
+}
+
+/** 토스트 버튼을 컨트롤러 명령으로 옮긴다. 실패해도 앱이 죽지 않게 삼킨다(상태는 이미 일관됨). */
+function handleToastAction(action: ToastAction): void {
+  const ctrl = controller
+  if (!ctrl) return
+  const send = (cmd: Command): void => {
+    try {
+      ctrl.dispatch(cmd)
+    } catch {
+      /* 이미 상태가 바뀐 뒤 늦게 도착한 응답 등은 무시한다 */
+    }
+  }
+  switch (action) {
+    case 'ok':
+      return send({ type: 'answer_checkin', answer: 'ok' })
+    case 'stuck':
+      return send({ type: 'answer_checkin', answer: 'stuck' })
+    case 'start_break':
+      return send({ type: 'break_start' })
+    case 'resume_session':
+      return send({ type: 'session_resume' })
+    case 'finish_session':
+      return send({ type: 'session_end', reason: 'timeout' })
+    case 'dismiss':
+      return
+  }
 }
 
 function createMainWindow(): BrowserWindow {
@@ -78,6 +118,12 @@ function registerIpc(ctrl: AppController): void {
       return { ok: false, error: err instanceof Error ? err.message : '알 수 없는 오류' }
     }
   })
+  ipcMain.handle(CHANNELS.toastGet, () => toasts?.currentPayload ?? null)
+  ipcMain.on(CHANNELS.toastAction, (_event, action: unknown) => {
+    if (typeof action === 'string' && (TOAST_ACTIONS as readonly string[]).includes(action)) {
+      toasts?.respond(action as ToastAction)
+    }
+  })
 }
 
 const gotLock = app.requestSingleInstanceLock()
@@ -91,10 +137,20 @@ if (!gotLock) {
     const ctrl = new AppController({
       eventStore: new EventStore(join(userData, 'events')),
       settingsStore: new SettingsStore(join(userData, 'settings.json')),
-      onChange: onStateChange
+      onChange: onStateChange,
+      onEffect: (effect) => toasts?.show(toastFor(effect, ctrl.snapshot(), timeScale)),
+      timeScale
     })
     controller = ctrl
     ctrl.init()
+
+    toasts = new ToastManager({
+      onAction: (action) => handleToastAction(action),
+      // 체크인에 응답하지 않으면 '응답 없음'으로 기록한다(연속 막힘 카운터는 건드리지 않음).
+      onExpire: (shown) => {
+        if (shown.kind === 'checkin') safeDispatch(ctrl, { type: 'answer_checkin', answer: 'timeout' })
+      }
+    })
     registerIpc(ctrl)
 
     widget = new WidgetWindow({
@@ -110,17 +166,26 @@ if (!gotLock) {
     mainWindow = createMainWindow()
     mainWindow.on('closed', () => {
       mainWindow = null
-      // 숨겨진 위젯 창이 남아 있어 window-all-closed가 오지 않으므로 직접 종료한다.
+      // 숨겨진 위젯·토스트 창이 남아 있어 window-all-closed가 오지 않으므로 직접 종료한다.
       app.quit()
     })
   })
 
-  // M3: 창을 닫으면 종료한다. 트레이 상주는 M4에서 추가한다.
+  // M4: 창을 닫으면 종료한다. 트레이 상주는 M5에서 추가한다.
   app.on('window-all-closed', () => app.quit())
   app.on('before-quit', () => {
     if (heartbeatTimer) clearInterval(heartbeatTimer)
     if (tickTimer) clearInterval(tickTimer)
     controller?.heartbeat() // 마지막 활동 시각을 남겨 복구 정확도를 높인다.
     widget?.dispose()
+    toasts?.dispose()
   })
+}
+
+function safeDispatch(ctrl: AppController, cmd: Command): void {
+  try {
+    ctrl.dispatch(cmd)
+  } catch {
+    /* 응답 대기가 이미 끝난 경우 */
+  }
 }

@@ -153,6 +153,20 @@ describe('SessionMachine — 막힘 대응', () => {
     expect(s.stuckStreak).toBe(0)
   })
 
+  it('연속 카운터는 세션 종료·회고·다음 세션 시작을 지나도 유지되고 reset_streak로만 비워진다', () => {
+    let s = askAt(start(), 10)
+    s = run(s, { type: 'answer_checkin', answer: 'stuck' }, 10).state
+    s = run(s, { type: 'end', reason: 'manual' }, 11).state
+    s = run(s, { type: 'save_reflection', output: '' }, 12).state
+    expect(s.phase).toBe('idle')
+    expect(s.stuckStreak).toBe(1)
+    s = run(s, { type: 'start', taskId: 'b', plannedMin: 25, checkinMin: 10 }, 13).state
+    expect(s.stuckStreak).toBe(1)
+    s = run(s, { type: 'end', reason: 'manual' }, 14).state
+    s = run(s, { type: 'save_reflection', output: '' }, 15).state
+    expect(run(s, { type: 'reset_streak' }, 16).state.stuckStreak).toBe(0)
+  })
+
   it('응답 시간 초과(timeout)는 연속 카운터를 바꾸지 않는다', () => {
     let s = askAt(start(), 10)
     s = run(s, { type: 'answer_checkin', answer: 'stuck' }, 10).state
