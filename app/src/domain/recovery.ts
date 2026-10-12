@@ -23,10 +23,15 @@ function clock(t: number): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
+/**
+ * 앱 시작 시 한 번 호출한다. 세션 상태는 메모리에만 있으므로 로그에 열린 세션이 남아 있으면
+ * 간격과 무관하게 닫는다. 하루·휴식은 heartbeat가 GAP_THRESHOLD_MS 넘게 끊긴 경우에만 보정한다.
+ */
 export function recoverEvents(events: readonly AppEvent[], now: number): RecoveryResult {
   const sorted = sortByTime(events)
   const last = sorted[sorted.length - 1]
-  if (!last || now - last.t <= GAP_THRESHOLD_MS) return { events: [], notice: null }
+  if (!last) return { events: [], notice: null }
+  const gapped = now - last.t > GAP_THRESHOLD_MS
 
   let dayOpen = false
   let breakOpen = false
@@ -64,6 +69,7 @@ export function recoverEvents(events: readonly AppEvent[], now: number): Recover
     out.push(makeEvent({ type: 'session_end', taskId: sessionTaskId, reason: 'recovered' }, last.t))
     notice = `이전 세션이 중단되어 ${clock(last.t)}까지만 반영했어요.`
   }
+  if (!gapped) return { events: out, notice }
   if (breakOpen) out.push(makeEvent({ type: 'break_end' }, last.t))
   if (dayOpen) {
     if (dateKey(last.t) !== dateKey(now)) {

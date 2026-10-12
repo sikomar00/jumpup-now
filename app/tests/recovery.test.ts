@@ -14,6 +14,17 @@ describe('recoverEvents', () => {
     expect(recoverEvents(events, T0 + 1 * MIN + GAP_THRESHOLD_MS).events).toEqual([])
   })
 
+  it('간격이 짧은 재시작이라도 열린 세션은 닫지만 하루·휴식은 건드리지 않는다', () => {
+    const events = [
+      at(0, { type: 'day_start' }),
+      at(5, { type: 'session_start', taskId: 'a', plannedMin: 25 }),
+      at(15, { type: 'heartbeat' })
+    ]
+    const r = recoverEvents(events, T0 + 15 * MIN + 10_000)
+    expect(r.events.map((e) => e.type)).toEqual(['session_end'])
+    expect(r.events[0]).toMatchObject({ reason: 'recovered', t: T0 + 15 * MIN })
+  })
+
   it('정상 종료된 하루는 건드리지 않는다', () => {
     const events = [at(0, { type: 'day_start' }), at(60, { type: 'day_end' })]
     expect(recoverEvents(events, T0 + 600 * MIN)).toEqual({ events: [], notice: null })
