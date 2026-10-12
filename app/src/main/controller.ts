@@ -33,6 +33,8 @@ export interface ControllerDeps {
   onChange?: (snapshot: AppSnapshot) => void
 }
 
+/** 1초 틱 사이가 이만큼 벌어지면 절전·정지가 있었던 것으로 본다. */
+const SLEEP_GAP_MS = 60_000
 const TITLE_MAX = 200
 const OUTPUT_MAX = 500
 const SIZES: readonly TaskSize[] = ['small', 'medium', 'large']
@@ -57,6 +59,7 @@ export class AppController {
   private reco: RecoView | null = null
   private rejected: string[] = []
   private notice: string | null = null
+  private lastTickAt: number | null = null
   private readonly now: () => number
   private readonly newId: () => string
 
@@ -100,6 +103,34 @@ export class AppController {
       stats,
       notice: this.notice
     }
+  }
+
+  /**
+   * 절전 진입(powerMonitor 'suspend'). 실행 중인 세션을 일시정지한다.
+   * 복귀 시 자동으로 재개하지 않는다 — 자리를 비운 시간을 작업으로 세지 않기 위해 사용자가 이어간다.
+   */
+  suspend(): void {
+    if (this.session.phase !== 'running') return
+    this.runSession({ type: 'pause', cause: 'suspend' })
+    this.deps.onChange?.(this.snapshot())
+  }
+
+  /**
+   * 1초마다 호출. 틱 사이가 비정상적으로 벌어졌다면(절전 이벤트를 놓친 경우 등)
+   * 마지막으로 살아있던 시각에 일시정지를 소급 기록한다.
+   */
+  tick(): void {
+    const now = this.now()
+    const prev = this.lastTickAt
+    this.lastTickAt = now
+    if (prev !== null && now - prev > SLEEP_GAP_MS && this.session.phase === 'running') {
+      this.runSession({ type: 'pause', cause: 'suspend' }, prev)
+      this.deps.onChange?.(this.snapshot())
+    }
+  }
+
+  saveWidgetPos(pos: { x: number; y: number }): void {
+    this.settings = this.deps.settingsStore.update({ widgetPos: pos })
   }
 
   /** 30초마다 호출. 하루나 세션이 열려 있을 때만 기록한다. */
@@ -247,8 +278,8 @@ export class AppController {
     if (!foldTasks(this.events).some((t) => t.id === id)) throw new Error('없는 할 일입니다.')
   }
 
-  private runSession(action: SessionAction): ReduceResult {
-    const result = reduce(this.session, action, this.now())
+  private runSession(action: SessionAction, at: number = this.now()): ReduceResult {
+    const result = reduce(this.session, action, at)
     this.session = result.state
     this.record(result.events)
     return result

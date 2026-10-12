@@ -36,6 +36,24 @@ describe('SessionMachine — 기본 전이', () => {
     expect(elapsedMs(s, T0 + 65 * MIN)).toBe(15 * MIN)
   })
 
+  it('일시정지 원인을 기억하고 재개·종료 시 지운다', () => {
+    let s = start()
+    s = run(s, { type: 'pause', cause: 'suspend' }, 5).state
+    expect(s.pauseCause).toBe('suspend')
+    expect(run(s, { type: 'resume' }, 9).state.pauseCause).toBeNull()
+    expect(run(s, { type: 'end', reason: 'manual' }, 9).state.pauseCause).toBeNull()
+    expect(start().pauseCause).toBeNull()
+  })
+
+  it('연속 막힘으로 정지되면 원인은 user다', () => {
+    let s = start()
+    for (const t of [10, 20, 30]) {
+      s = run(s, { type: 'tick' }, t).state
+      s = run(s, { type: 'answer_checkin', answer: 'stuck' }, t).state
+    }
+    expect(s.pauseCause).toBe('user')
+  })
+
   it('잘못된 전이는 상태·이벤트를 바꾸지 않는다', () => {
     const idle = initialSessionState()
     expect(run(idle, { type: 'pause', cause: 'user' }, 0).events).toEqual([])

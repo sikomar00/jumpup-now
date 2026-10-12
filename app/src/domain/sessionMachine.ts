@@ -14,6 +14,8 @@ export const STUCK_STREAK_FOR_BREAK = 3
 
 export interface SessionState {
   phase: 'idle' | 'running' | 'paused' | 'reflecting'
+  /** paused일 때만 값이 있다. 절전·유휴로 멈췄는지 사용자가 멈췄는지 UI가 구분한다. */
+  pauseCause: PauseCause | null
   taskId: string | null
   plannedMin: number
   /** 현재 구간 이전까지 누적된 작업 시간 */
@@ -52,6 +54,7 @@ export interface ReduceResult {
 export function initialSessionState(): SessionState {
   return {
     phase: 'idle',
+    pauseCause: null,
     taskId: null,
     plannedMin: 0,
     activeMs: 0,
@@ -101,7 +104,13 @@ export function reduce(state: SessionState, action: SessionAction, now: number):
     case 'pause': {
       if (state.phase !== 'running') return none(state)
       return {
-        state: { ...state, phase: 'paused', activeMs: elapsedMs(state, now), segmentStart: null },
+        state: {
+          ...state,
+          phase: 'paused',
+          pauseCause: action.cause,
+          activeMs: elapsedMs(state, now),
+          segmentStart: null
+        },
         events: [ev({ type: 'session_pause', cause: action.cause })],
         effects: []
       }
@@ -110,7 +119,7 @@ export function reduce(state: SessionState, action: SessionAction, now: number):
     case 'resume': {
       if (state.phase !== 'paused') return none(state)
       return {
-        state: { ...state, phase: 'running', segmentStart: now },
+        state: { ...state, phase: 'running', pauseCause: null, segmentStart: now },
         events: [ev({ type: 'session_resume' })],
         effects: []
       }
@@ -149,7 +158,13 @@ export function reduce(state: SessionState, action: SessionAction, now: number):
           // 연속 막힘: 휴식을 제안하고 세션을 일시정지한다. 카운터는 휴식 후 다시 센다.
           next = { ...next, stuckStreak: 0 }
           if (state.phase === 'running') {
-            next = { ...next, phase: 'paused', activeMs: elapsedMs(state, now), segmentStart: null }
+            next = {
+              ...next,
+              phase: 'paused',
+              pauseCause: 'user',
+              activeMs: elapsedMs(state, now),
+              segmentStart: null
+            }
             events.push(ev({ type: 'session_pause', cause: 'user' }))
           }
           effects.push({ kind: 'suggest_break' })
@@ -170,6 +185,7 @@ export function reduce(state: SessionState, action: SessionAction, now: number):
         state: {
           ...state,
           phase: 'reflecting',
+          pauseCause: null,
           activeMs: elapsedMs(state, now),
           segmentStart: null,
           checkinPending: false

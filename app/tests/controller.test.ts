@@ -192,6 +192,72 @@ describe('하루·휴식 규칙', () => {
   })
 })
 
+describe('절전·정지 처리', () => {
+  function runningSession() {
+    const made = make()
+    made.ctrl.dispatch(onboard)
+    made.ctrl.dispatch({ type: 'task_add', title: 'A' })
+    made.ctrl.dispatch({ type: 'day_start' })
+    made.ctrl.dispatch({ type: 'reco_request' })
+    made.ctrl.dispatch({ type: 'session_start' })
+    return made
+  }
+
+  it('suspend()는 실행 중 세션을 절전 원인으로 멈추고, 복귀해도 자동 재개하지 않는다', () => {
+    const { ctrl } = runningSession()
+    clock += 10 * MIN
+    ctrl.suspend()
+    let s = ctrl.snapshot()
+    expect(s.session.phase).toBe('paused')
+    expect(s.session.pauseCause).toBe('suspend')
+
+    clock += 2 * 60 * MIN // 2시간 절전
+    ctrl.tick() // 복귀 후 틱: 이미 멈춰 있으므로 아무 일도 없어야 한다
+    s = ctrl.snapshot()
+    expect(s.session.phase).toBe('paused')
+    expect(s.stats.workMs).toBe(10 * MIN)
+
+    ctrl.dispatch({ type: 'session_resume' })
+    clock += 5 * MIN
+    expect(ctrl.snapshot().stats.workMs).toBe(15 * MIN)
+  })
+
+  it('idle·이미 정지된 상태에서 suspend()는 무시한다', () => {
+    const { ctrl, pushes } = make()
+    ctrl.dispatch(onboard)
+    const before = pushes.length
+    ctrl.suspend()
+    expect(pushes.length).toBe(before)
+  })
+
+  it('절전 이벤트를 놓쳐도 틱 간격이 크게 벌어지면 마지막 틱 시각으로 소급해 멈춘다', () => {
+    const { ctrl } = runningSession()
+    clock += 10 * MIN
+    ctrl.tick() // 09:10 마지막 정상 틱
+    clock += 3 * 60 * MIN // 이벤트 없이 3시간 정지(절전·최대 절전 등)
+    ctrl.tick()
+    const s = ctrl.snapshot()
+    expect(s.session.phase).toBe('paused')
+    expect(s.session.pauseCause).toBe('suspend')
+    expect(s.stats.workMs).toBe(10 * MIN) // 정지된 3시간은 작업 시간이 아니다
+  })
+
+  it('1초 간격의 정상 틱은 세션을 건드리지 않는다', () => {
+    const { ctrl } = runningSession()
+    for (let i = 0; i < 5; i++) {
+      clock += 1000
+      ctrl.tick()
+    }
+    expect(ctrl.snapshot().session.phase).toBe('running')
+  })
+
+  it('위젯 위치를 설정에 저장하고 재시작 후에도 유지한다', () => {
+    const { ctrl } = make()
+    ctrl.saveWidgetPos({ x: 120, y: 340 })
+    expect(make().ctrl.snapshot().settings.widgetPos).toEqual({ x: 120, y: 340 })
+  })
+})
+
 describe('복구·heartbeat', () => {
   it('열린 하루·세션이 없으면 heartbeat를 기록하지 않는다', () => {
     const { ctrl } = make()

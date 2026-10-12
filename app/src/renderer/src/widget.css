@@ -1,0 +1,37 @@
+/* 위젯은 투명 창 위에 항상 어두운 알약 모양으로 그린다(배경 테마와 무관하게 눈에 띄도록). */
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+body { font: 13px/1 'Malgun Gothic', 'Apple SD Gothic Neo', system-ui, sans-serif; user-select: none; }
+
+.pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 8px 0 16px;
+  background: #111;
+  color: #f3f3f0;
+  border-radius: 99px;
+  border: 1px solid #2c2c2a;
+  -webkit-app-region: drag; /* 드래그로 위치 이동 */
+}
+.pill.paused { background: #2a2208; border-color: #5a4a12; }
+.t { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 16px; }
+.n { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #d8d8d2; }
+.b {
+  -webkit-app-region: no-drag;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 99px;
+  background: #2c2c2a;
+  color: #f3f3f0;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.b:hover { background: #3d3d3a; }
+.b.go { background: #2f6fed; color: #fff; }
+.b.go:hover { background: #4a82f0; }
