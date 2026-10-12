@@ -52,6 +52,11 @@ export interface ControllerDeps {
 
 /** 1초 틱 사이가 이만큼 벌어지면 절전·정지가 있었던 것으로 본다. */
 const SLEEP_GAP_MS = 60_000
+/**
+ * 틱 사이 공백이 이 이상이면 하루 상태도 보정한다: 같은 날이면 그 공백을 휴식으로 처리해 분모에서 빼고,
+ * 자정을 넘겼다면 마지막 활동 시각에 하루를 닫는다.
+ */
+const DAY_GAP_MS = 30 * 60_000
 /** 하루 시작 알림 판단은 전체 로그를 훑으므로 이 간격으로만 한다. */
 const PROMPT_CHECK_MS = 5000
 const SNOOZE_MS = 10 * 60_000
@@ -73,6 +78,11 @@ function startOfDay(t: number): number {
   const d = new Date(t)
   d.setHours(0, 0, 0, 0)
   return d.getTime()
+}
+
+function clockOf(t: number): string {
+  const d = new Date(t)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 function toRecoTask(task: Task): RecoTask {
@@ -183,14 +193,16 @@ export class AppController {
     const now = this.now()
     const prev = this.lastTickAt
     this.lastTickAt = now
+
+    if (prev !== null && now - prev > SLEEP_GAP_MS) {
+      // 절전·정지가 있었다. 이번 틱은 보정만 하고 세션 틱은 건너뛴다.
+      if (this.handleGap(prev, now)) this.deps.onChange?.(this.snapshot())
+      this.checkDayStartPrompt(now)
+      return
+    }
     this.checkDayStartPrompt(now)
     if (this.session.phase !== 'running') return
 
-    if (prev !== null && now - prev > SLEEP_GAP_MS) {
-      this.runSession({ type: 'pause', cause: 'suspend' }, prev)
-      this.deps.onChange?.(this.snapshot())
-      return
-    }
     // 체크인 시각·계획 시간 도달 여부. 상태가 바뀐 경우에만 푸시한다.
     const before = this.session
     this.runSession({ type: 'tick' })
@@ -349,7 +361,11 @@ export class AppController {
       case 'session_resume':
         if (ds.breakOpen) throw new Error('휴식 중입니다. 휴식을 끝내세요.')
         this.stuckBreakPending = false
-        this.runSession({ type: 'resume' })
+        this.runSession({ type: 'resume', ...(cmd.credit ? { credit: true } : {}) })
+        return
+
+      case 'time_up_expired':
+        this.runSession({ type: 'time_up_expired' })
         return
 
       case 'answer_checkin':
@@ -383,6 +399,45 @@ export class AppController {
         this.notice = null
         return
     }
+  }
+
+  /**
+   * 틱 사이에 prev~now 공백이 있었다(절전·최대 절전·프로세스 정지). 측정이 틀어지지 않도록 보정한다.
+   * - 실행 중인 세션은 prev 시각으로 소급해 정지한다.
+   * - 공백이 30분 이상이고 하루가 열려 있으면: 같은 날이면 휴식으로, 자정을 넘겼으면 하루를 prev에 닫는다.
+   * 상태가 바뀌었으면 true.
+   */
+  private handleGap(prev: number, now: number): boolean {
+    let changed = false
+    if (this.session.phase === 'running') {
+      this.runSession({ type: 'pause', cause: 'suspend' }, prev)
+      changed = true
+    }
+    if (now - prev < DAY_GAP_MS) return changed
+
+    const ds = dayState(this.events)
+    if (!ds.dayOpen) return changed
+    if (dateKey(prev) !== dateKey(now)) {
+      // 자정을 넘긴 공백: 그날은 마지막 활동 시각에 끝난 것으로 본다.
+      if (this.session.phase === 'running' || this.session.phase === 'paused') {
+        this.runSession({ type: 'abort', at: prev })
+      } else if (this.session.phase === 'reflecting') {
+        this.session = { ...initialSessionState(), stuckStreak: this.session.stuckStreak }
+      }
+      if (ds.breakOpen) this.record([makeEvent({ type: 'break_end' }, prev)])
+      this.record([makeEvent({ type: 'day_end' }, prev)])
+      this.reco = null
+      this.rejected = []
+      this.stuckBreakPending = false
+      this.notice = `${clockOf(prev)}에 자리를 비운 뒤 날짜가 바뀌어, 그날의 하루는 ${clockOf(prev)}에 끝난 것으로 처리했어요.`
+    } else if (!ds.breakOpen) {
+      // 같은 날의 긴 공백(점심·절전): 휴식으로 처리해 측정 시간(분모)에서 뺀다.
+      this.record([
+        makeEvent({ type: 'break_start', reason: 'asleep' }, prev),
+        makeEvent({ type: 'break_end' }, now)
+      ])
+    }
+    return true
   }
 
   private checkDayStartPrompt(now: number): void {

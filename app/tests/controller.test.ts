@@ -3,12 +3,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS, type Settings } from '../src/domain/settings'
+import { computeStats } from '../src/domain/stats'
 import { AppController } from '../src/main/controller'
 import { EventStore } from '../src/main/store/eventStore'
 import { SettingsStore } from '../src/main/store/settingsStore'
 import type { AppSnapshot, Command } from '../src/shared/ipc'
 
 const MIN = 60_000
+const H = 60 * MIN
 const T0 = new Date(2026, 9, 12, 9, 0, 0).getTime()
 
 let dir: string
@@ -571,6 +573,162 @@ describe('하루 시작 알림·빠른 추천·설정·요약 (M5)', () => {
     ctrl.init()
     ctrl.setNotice('단축키 등록 실패')
     expect(pushes.at(-1)?.notice).toBe('단축키 등록 실패')
+  })
+})
+
+describe('측정 왜곡 방지: 자리 비움·절전·하루 경계 (회귀)', () => {
+  function setup() {
+    const effects: string[] = []
+    let n = 0
+    const ctrl = new AppController({
+      eventStore: new EventStore(join(dir, 'events')),
+      settingsStore: new SettingsStore(join(dir, 'settings.json')),
+      now: () => clock,
+      newId: () => `t${++n}`,
+      onEffect: (e) => effects.push(e.kind === 'idle_pause' ? `idle_pause:${e.reason}` : e.kind)
+    })
+    ctrl.init()
+    ctrl.dispatch(onboard)
+    ctrl.dispatch({ type: 'task_add', title: 'A' })
+    ctrl.dispatch({ type: 'day_start' })
+    return { ctrl, effects }
+  }
+  const startSession = (ctrl: AppController): void => {
+    ctrl.dispatch({ type: 'reco_request' })
+    ctrl.dispatch({ type: 'session_start' })
+  }
+  /**
+   * 1초 틱으로 시간을 흘린다. 체크인 토스트는 30초 뒤 응답 없이 사라진다고 가정하고(answer='timeout'),
+   * present=true면 토스트가 뜨자마자 '진행 중'으로 응답한다.
+   */
+  function elapse(ctrl: AppController, effects: string[], minutes: number, present: boolean): void {
+    let dueAt: number | null = null
+    let seen = effects.filter((e) => e === 'checkin_due').length
+    for (let i = 0; i < minutes * 60; i++) {
+      clock += 1000
+      ctrl.tick()
+      const count = effects.filter((e) => e === 'checkin_due').length
+      if (count > seen) {
+        seen = count
+        dueAt = clock
+        if (present) {
+          ctrl.dispatch({ type: 'answer_checkin', answer: 'ok' })
+          dueAt = null
+        }
+      }
+      if (dueAt !== null && clock - dueAt >= 30_000) {
+        try { ctrl.dispatch({ type: 'answer_checkin', answer: 'timeout' }) } catch { /* 이미 정지 */ }
+        dueAt = null
+      }
+    }
+  }
+
+  it('A) 세션을 켜 둔 채 자리를 비워도 작업 시간이 몇 시간씩 부풀지 않는다', () => {
+    const { ctrl, effects } = setup()
+    startSession(ctrl)
+    elapse(ctrl, effects, 30, true) // 30분 정상 작업 (체크인마다 응답)
+    elapse(ctrl, effects, 4 * 60, false) // 이후 4시간 자리 비움
+    const s = ctrl.snapshot()
+    expect(s.session.phase).toBe('paused')
+    expect(s.session.pauseCause).toBe('idle')
+    // 마지막 응답(30분) 뒤 첫 무응답 체크인(40분)까지만 센다 — 최대 한 체크인 간격(10분) 과대 계상
+    expect(s.stats.workMs).toBeGreaterThanOrEqual(30 * MIN)
+    expect(s.stats.workMs).toBeLessThanOrEqual(41 * MIN)
+    expect(effects).toContain('idle_pause:checkin')
+  })
+
+  it('A-2) 자리 비움으로 멈춘 뒤 "계속 일하고 있었어요"로 이어가면 그 구간이 인정된다', () => {
+    const { ctrl, effects } = setup()
+    startSession(ctrl)
+    elapse(ctrl, effects, 30, true)
+    elapse(ctrl, effects, 30, false) // 40분에 소급 정지가 일어남
+    expect(ctrl.snapshot().session.pauseCause).toBe('idle')
+    ctrl.dispatch({ type: 'session_resume', credit: true })
+    clock += 5 * MIN
+    // 정지가 없었던 것처럼 이어진다: 약 60+5분
+    expect(ctrl.snapshot().stats.workMs).toBeGreaterThanOrEqual(64 * MIN)
+  })
+
+  it('C) 25분 세션을 시작하고 방치해도 시간 종료 알림을 놓치면 25분 시점에서 멈춘다', () => {
+    const { ctrl, effects } = setup()
+    startSession(ctrl)
+    elapse(ctrl, effects, 25, true) // 25분 (체크인 응답, 시간 종료 알림 발생)
+    expect(effects).toContain('time_up')
+    ctrl.dispatch({ type: 'time_up_expired' }) // 토스트가 응답 없이 사라짐
+    clock += 3 * H // 그 뒤 3시간 방치
+    ctrl.tick()
+    const s = ctrl.snapshot()
+    expect(s.session.pauseCause).toBe('idle')
+    expect(s.stats.workMs).toBeGreaterThanOrEqual(25 * MIN)
+    expect(s.stats.workMs).toBeLessThan(27 * MIN)
+  })
+
+  it('B-1) 하루 종료 없이 같은 날 긴 절전: 공백은 휴식으로 처리되어 분모에서 빠진다', () => {
+    const { ctrl } = setup() // 09:00 시작
+    clock += 30 * MIN
+    for (let i = 0; i < 5; i++) { clock += 1000; ctrl.tick() }
+    const before = ctrl.snapshot().stats.availableMs
+    clock += 3 * H // 절전 3시간 (같은 날)
+    ctrl.tick()
+    clock += 30 * MIN
+    const s = ctrl.snapshot()
+    expect(s.breakOpen).toBe(false)
+    expect(s.dayOpen).toBe(true)
+    // 30분 + 30분만 측정 시간. 공백 3시간은 제외
+    expect(s.stats.availableMs).toBeGreaterThanOrEqual(before + 29 * MIN)
+    expect(s.stats.availableMs).toBeLessThan(62 * MIN)
+    expect(s.stats.breakMs).toBeGreaterThanOrEqual(3 * H)
+  })
+
+  it('B-2) 공백이 30분 미만이면 하루 상태를 건드리지 않는다(세션만 소급 정지)', () => {
+    const { ctrl } = setup()
+    startSession(ctrl)
+    for (let i = 0; i < 60; i++) { clock += 1000; ctrl.tick() }
+    clock += 10 * MIN
+    ctrl.tick()
+    const s = ctrl.snapshot()
+    expect(s.session.pauseCause).toBe('suspend')
+    expect(s.stats.breakMs).toBe(0)
+  })
+
+  it('B-3) 자정을 넘기는 긴 공백: 그날은 마지막 활동 시각에 닫히고 안내가 뜬다', () => {
+    clock = new Date(2026, 9, 12, 22, 0).getTime()
+    const { ctrl } = setup()
+    for (let i = 0; i < 30; i++) { clock += 1000; ctrl.tick() } // 22:00:30
+    const lastActive = clock
+    clock = new Date(2026, 9, 13, 8, 0).getTime() // 다음 날 아침 복귀
+    ctrl.tick()
+    const s = ctrl.snapshot()
+    expect(s.dayOpen).toBe(false)
+    expect(s.notice).toContain('22:00')
+    expect(s.notice).toContain('끝난 것으로')
+    const { events } = new EventStore(join(dir, 'events')).readAll()
+    const dayEnd = events.find((e) => e.type === 'day_end')
+    expect(dayEnd?.t).toBe(lastActive)
+  })
+
+  it('B-4) 자정 공백 중 세션이 열려 있었다면 회고 없이 그 시각에 종료(recovered)하고 idle로 돌아간다', () => {
+    clock = new Date(2026, 9, 12, 22, 0).getTime()
+    const { ctrl } = setup()
+    startSession(ctrl)
+    for (let i = 0; i < 30; i++) { clock += 1000; ctrl.tick() }
+    clock = new Date(2026, 9, 13, 8, 0).getTime()
+    ctrl.tick()
+    expect(ctrl.snapshot().session.phase).toBe('idle')
+    const { events } = new EventStore(join(dir, 'events')).readAll()
+    expect(events.find((e) => e.type === 'session_end')).toMatchObject({ reason: 'recovered' })
+    // 어제 하루 기준 작업 시간은 절전 전 30초 수준 — 밤새 흐르지 않았다
+    const work = computeStats(events, clock).workMs
+    expect(work).toBeLessThan(2 * MIN)
+  })
+
+  it('B-5) 새 날 아침에는 이어서 새 하루를 시작할 수 있다', () => {
+    clock = new Date(2026, 9, 12, 22, 0).getTime()
+    const { ctrl } = setup()
+    clock = new Date(2026, 9, 13, 8, 0).getTime()
+    ctrl.tick()
+    ctrl.dispatch({ type: 'day_start' })
+    expect(ctrl.snapshot().dayOpen).toBe(true)
   })
 })
 

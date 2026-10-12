@@ -1,20 +1,33 @@
 // 도그푸딩 기준선 리포트 CLI.
-//   npm run report                    → %APPDATA%\JumpUp Now\events 를 읽는다
-//   npm run report -- <이벤트 폴더>   → 다른 폴더(예: 백업)를 읽는다
+//   npm run report                              → %APPDATA%\JumpUp Now\events 를 읽는다
+//   npm run report -- <이벤트 폴더>             → 다른 폴더(예: 백업)를 읽는다
+//   npm run report -- --since 2026-10-13        → 그 날짜(로컬) 이후 기록만 쓴다 (예: 측정 방식을 고친 버전 이후)
 // 읽기 전용이다. 앱이 실행 중이어도 안전하다(로그는 추가 전용).
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { baselineOf, summarizeByDay } from '../src/domain/report'
 import { EventStore } from '../src/main/store/eventStore'
 
-const dir = process.argv[2] ?? join(process.env.APPDATA ?? '', 'JumpUp Now', 'events')
+const args = process.argv.slice(2)
+const sinceIdx = args.indexOf('--since')
+const sinceArg = sinceIdx >= 0 ? args[sinceIdx + 1] : undefined
+if (sinceIdx >= 0 && !/^\d{4}-\d{2}-\d{2}$/.test(sinceArg ?? '')) {
+  console.error('--since 는 YYYY-MM-DD 형식이어야 합니다. 예: --since 2026-10-13')
+  process.exit(1)
+}
+const since = sinceArg ? new Date(`${sinceArg}T00:00:00`).getTime() : null
+const positional = args.filter((a, i) => !a.startsWith('--') && i !== sinceIdx + 1)
+const dir = positional[0] ?? join(process.env.APPDATA ?? '', 'JumpUp Now', 'events')
 if (!existsSync(dir)) {
   console.error(`이벤트 폴더가 없습니다: ${dir}\n앱을 한 번도 실행하지 않았거나 경로가 다릅니다. 경로를 인자로 넘겨 주세요.`)
   process.exit(1)
 }
 
-const { events, skipped } = new EventStore(dir).readAll()
+const all = new EventStore(dir).readAll()
+const skipped = all.skipped
+const events = since === null ? all.events : all.events.filter((e) => e.t >= since)
 const days = summarizeByDay(events, Date.now())
+if (since !== null) console.log(`※ ${sinceArg} 이후 기록만 사용합니다 (이전 ${all.events.length - events.length}개 이벤트 제외)`)
 const base = baselineOf(days)
 
 const pct = (r: number | null): string => (r === null ? '—' : `${Math.round(r * 100)}%`)

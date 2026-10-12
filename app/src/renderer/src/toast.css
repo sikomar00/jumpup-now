@@ -42,3 +42,8 @@ body { font: 14px/1.4 'Malgun Gothic', 'Apple SD Gothic Neo', system-ui, sans-se
 }
 .btns button:hover { border-color: var(--accent); }
 .btns button.p { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.lnk {
+  background: none; border: 0; padding: 0; color: var(--sub); font: inherit; font-size: 12px;
+  text-decoration: underline; cursor: pointer; text-align: center;
+}
+.lnk:hover { color: var(--ink); }

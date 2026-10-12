@@ -59,6 +59,27 @@ function Toast() {
           </div>
         </div>
       )
+    case 'idle': {
+      const t = new Date(payload.since)
+      const at = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`
+      return (
+        <div className="card" data-testid="toast-idle">
+          <div className="h">자리를 비우셨나요?</div>
+          <div className="m" data-testid="toast-msg">
+            {payload.reason === 'checkin'
+              ? `${at}부터 체크인 응답이 없어 멈췄어요.`
+              : `${payload.plannedMin}분이 지난 ${at}에 멈췄어요.`}
+          </div>
+          <div className="btns">
+            <button className="p" data-testid="toast-idle-resume" onClick={() => act('resume_session')}>이어가기</button>
+            <button data-testid="toast-idle-end" onClick={() => act('end_session')}>끝내기</button>
+          </div>
+          <button className="lnk" data-testid="toast-idle-credit" onClick={() => act('resume_credit')}>
+            계속 일하고 있었어요 (시간 인정)
+          </button>
+        </div>
+      )
+    }
     case 'day_start':
       return (
         <div className="card" data-testid="toast-daystart">

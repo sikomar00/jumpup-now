@@ -88,6 +88,10 @@ function handleToastAction(action: ToastAction): void {
       return send({ type: 'break_start' })
     case 'resume_session':
       return send({ type: 'session_resume' })
+    case 'resume_credit':
+      return send({ type: 'session_resume', credit: true })
+    case 'end_session':
+      return send({ type: 'session_end', reason: 'manual' })
     case 'finish_session':
       return send({ type: 'session_end', reason: 'timeout' })
     case 'start_day':
@@ -252,9 +256,12 @@ if (!gotLock) {
 
     toasts = new ToastManager({
       onAction: (action) => handleToastAction(action),
-      // 체크인에 응답하지 않으면 '응답 없음'으로 기록한다(연속 막힘 카운터는 건드리지 않음).
       onExpire: (shown) => {
+        // 체크인에 응답하지 않으면 '응답 없음'으로 기록한다(연속 막힘 카운터는 건드리지 않고,
+        // 연속 무응답이 쌓이면 상태 머신이 자리 비움으로 소급 정지한다).
         if (shown.kind === 'checkin') safeDispatch(ctrl, { type: 'answer_checkin', answer: 'timeout' })
+        // 시간 종료 알림을 아무도 받지 않았다면 계획 시간 시점으로 소급해 멈춘다.
+        if (shown.kind === 'time_up') safeDispatch(ctrl, { type: 'time_up_expired' })
       }
     })
     registerIpc(ctrl)

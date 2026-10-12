@@ -11,6 +11,11 @@ import {
 } from './events'
 
 export const STUCK_STREAK_FOR_BREAK = 3
+/**
+ * 체크인에 연속으로 이만큼 응답하지 않으면 자리를 비운 것으로 보고, 첫 무응답 시각으로 소급해 정지한다.
+ * 체크인 간격이 10분이면 마지막으로 확인된 시점 이후 최대 약 10분이 과대 계상될 수 있다.
+ */
+export const IDLE_TIMEOUTS_FOR_PAUSE = 2
 
 export interface SessionState {
   phase: 'idle' | 'running' | 'paused' | 'reflecting'
@@ -26,15 +31,30 @@ export interface SessionState {
   /** 다음 체크인이 울릴 누적 작업 시간 */
   nextCheckinMs: number
   checkinPending: boolean
+  /** 현재 응답 대기 중인 체크인이 울린 시각 */
+  checkinDueAt: number | null
   timeUpNotified: boolean
+  /** 시간 종료 알림이 울린 시각 */
+  timeUpAt: number | null
   stuckStreak: number
+  /** 연속 무응답 체크인 수 */
+  timeoutStreak: number
+  /** 연속 무응답이 시작된(첫 무응답 체크인이 울린) 시각 */
+  idleSince: number | null
+  /** 자리 비움으로 소급 정지한 시각. "시간 인정" 재개에 쓴다. */
+  idlePausedAt: number | null
 }
 
 export type SessionAction =
   | { type: 'start'; taskId: string; plannedMin: number; checkinMin: number }
   | { type: 'pause'; cause: PauseCause }
-  | { type: 'resume' }
+  /** credit: 자리 비움 정지 구간을 작업 시간으로 인정하고 이어간다 */
+  | { type: 'resume'; credit?: boolean }
   | { type: 'tick' }
+  /** 시간 종료 알림에 아무도 응답하지 않았다 → 계획 시간 시점으로 소급 정지 */
+  | { type: 'time_up_expired' }
+  /** 회고 없이 세션을 버린다(하루 경계를 넘긴 공백 등). at 시각에 recovered로 종료한다. */
+  | { type: 'abort'; at: number }
   | { type: 'answer_checkin'; answer: CheckinAnswer }
   | { type: 'end'; reason: 'done' | 'timeout' | 'manual' }
   | { type: 'save_reflection'; output: string; goalLink?: GoalLink; cause?: StuckCause }
@@ -46,6 +66,8 @@ export type SessionEffect =
   | { kind: 'time_up' }
   | { kind: 'rescue'; level: 1 | 2 }
   | { kind: 'suggest_break' }
+  /** 자리를 비운 것으로 보고 since 시각으로 소급해 세션을 멈췄다 */
+  | { kind: 'idle_pause'; since: number; reason: 'checkin' | 'time_up' }
 
 export interface ReduceResult {
   state: SessionState
@@ -64,8 +86,28 @@ export function initialSessionState(): SessionState {
     checkinMs: 0,
     nextCheckinMs: 0,
     checkinPending: false,
+    checkinDueAt: null,
     timeUpNotified: false,
-    stuckStreak: 0
+    timeUpAt: null,
+    stuckStreak: 0,
+    timeoutStreak: 0,
+    idleSince: null,
+    idlePausedAt: null
+  }
+}
+
+/** since 시각으로 소급해 자리 비움 정지 상태로 만든다. 그 시각까지의 작업 시간만 남긴다. */
+function idlePaused(state: SessionState, since: number): SessionState {
+  return {
+    ...state,
+    phase: 'paused',
+    pauseCause: 'idle',
+    activeMs: elapsedMs(state, since),
+    segmentStart: null,
+    checkinPending: false,
+    timeoutStreak: 0,
+    idleSince: null,
+    idlePausedAt: since
   }
 }
 
@@ -122,8 +164,18 @@ export function reduce(state: SessionState, action: SessionAction, now: number):
 
     case 'resume': {
       if (state.phase !== 'paused') return none(state)
+      const cleared = { pauseCause: null, timeoutStreak: 0, idleSince: null, idlePausedAt: null }
+      if (action.credit && state.idlePausedAt !== null) {
+        // 멈춘 시각으로 소급해 이어간다: 정지~지금 구간을 작업 시간으로 인정한다.
+        const from = state.idlePausedAt
+        return {
+          state: { ...state, ...cleared, phase: 'running', segmentStart: from },
+          events: [makeEvent({ type: 'session_resume', credited: true }, from)],
+          effects: []
+        }
+      }
       return {
-        state: { ...state, phase: 'running', pauseCause: null, segmentStart: now },
+        state: { ...state, ...cleared, phase: 'running', segmentStart: now },
         events: [ev({ type: 'session_resume' })],
         effects: []
       }
@@ -136,14 +188,40 @@ export function reduce(state: SessionState, action: SessionAction, now: number):
       const effects: SessionEffect[] = []
       if (!state.checkinPending && elapsed >= state.nextCheckinMs) {
         // 체크인 응답을 기다리는 동안 타이머는 계속 흐른다.
-        next = { ...next, checkinPending: true, nextCheckinMs: state.nextCheckinMs + state.checkinMs }
+        next = {
+          ...next,
+          checkinPending: true,
+          checkinDueAt: now,
+          nextCheckinMs: state.nextCheckinMs + state.checkinMs
+        }
         effects.push({ kind: 'checkin_due' })
       }
       if (!state.timeUpNotified && elapsed >= state.plannedMin * 60_000) {
-        next = { ...next, timeUpNotified: true }
+        next = { ...next, timeUpNotified: true, timeUpAt: now }
         effects.push({ kind: 'time_up' })
       }
       return { state: next, events: [], effects }
+    }
+
+    case 'time_up_expired': {
+      if (state.phase !== 'running' || state.timeUpAt === null) return none(state)
+      const since = state.timeUpAt
+      return {
+        state: idlePaused(state, since),
+        events: [makeEvent({ type: 'session_pause', cause: 'idle' }, since)],
+        effects: [{ kind: 'idle_pause', since, reason: 'time_up' }]
+      }
+    }
+
+    case 'abort': {
+      if ((state.phase !== 'running' && state.phase !== 'paused') || state.taskId === null) {
+        return none(state)
+      }
+      return {
+        state: { ...initialSessionState(), stuckStreak: state.stuckStreak },
+        events: [makeEvent({ type: 'session_end', taskId: state.taskId, reason: 'recovered' }, action.at)],
+        effects: []
+      }
     }
 
     case 'answer_checkin': {
@@ -155,8 +233,9 @@ export function reduce(state: SessionState, action: SessionAction, now: number):
       const effects: SessionEffect[] = []
 
       if (action.answer === 'ok') {
-        next = { ...next, stuckStreak: 0 }
+        next = { ...next, stuckStreak: 0, timeoutStreak: 0, idleSince: null }
       } else if (action.answer === 'stuck') {
+        next = { ...next, timeoutStreak: 0, idleSince: null }
         const streak = state.stuckStreak + 1
         if (streak >= STUCK_STREAK_FOR_BREAK) {
           // 연속 막힘: 휴식을 제안하고 세션을 일시정지한다. 카운터는 휴식 후 다시 센다.
@@ -176,8 +255,18 @@ export function reduce(state: SessionState, action: SessionAction, now: number):
           next = { ...next, stuckStreak: streak }
           effects.push({ kind: 'rescue', level: streak as 1 | 2 })
         }
+      } else if (state.phase === 'running') {
+        // 'timeout'은 응답 없음: 연속 막힘 카운터는 건드리지 않되, 연속 무응답이 쌓이면 자리를 비운 것으로 본다.
+        const timeouts = state.timeoutStreak + 1
+        const since = state.idleSince ?? state.checkinDueAt ?? now
+        if (timeouts >= IDLE_TIMEOUTS_FOR_PAUSE) {
+          next = idlePaused(next, since)
+          events.push(makeEvent({ type: 'session_pause', cause: 'idle' }, since))
+          effects.push({ kind: 'idle_pause', since, reason: 'checkin' })
+        } else {
+          next = { ...next, timeoutStreak: timeouts, idleSince: since }
+        }
       }
-      // 'timeout'은 응답 없음이므로 연속 막힘 카운터를 건드리지 않는다.
       return { state: next, events, effects }
     }
 

@@ -15,7 +15,8 @@ export type EventBody =
   | { type: 'reco_shown'; taskId: string; source: 'rule' | 'ai' }
   | { type: 'session_start'; taskId: string; plannedMin: number }
   | { type: 'session_pause'; cause: PauseCause }
-  | { type: 'session_resume' }
+  /** credited: 자리 비움으로 멈췄던 구간을 "실제로는 일하고 있었다"며 인정한 재개(멈춘 시각으로 소급) */
+  | { type: 'session_resume'; credited?: boolean }
   | { type: 'session_end'; taskId: string; reason: EndReason }
   | { type: 'checkin'; answer: CheckinAnswer }
   | {

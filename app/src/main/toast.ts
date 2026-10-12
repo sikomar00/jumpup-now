@@ -6,7 +6,7 @@ import { CHANNELS, type AppSnapshot, type ToastAction, type ToastPayload } from 
 import { isToastStale } from './toastPayload'
 import { WIDGET_SIZE } from './widget'
 
-export const TOAST_SIZE = { width: 340, height: 140 } as const
+export const TOAST_SIZE = { width: 340, height: 164 } as const
 const MARGIN = 24
 const GAP_ABOVE_WIDGET = 12
 

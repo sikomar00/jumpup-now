@@ -1,6 +1,6 @@
 {
   "name": "jumpup-now",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "생각 과잉 → 착수: 지금 할 일 하나를 시작시키고 실질 작업비율을 측정하는 데스크톱 앱",
   "scripts": {
@@ -12,11 +12,12 @@
     "typecheck": "tsc --noEmit",
     "e2e": "node tests/e2e/smoke.mjs",
     "e2e:checkin": "node tests/e2e/checkin.mjs",
-    "e2e:all": "npm run e2e && npm run e2e:checkin && npm run e2e:daily",
+    "e2e:all": "npm run e2e && npm run e2e:checkin && npm run e2e:daily && npm run e2e:idle",
     "e2e:daily": "node tests/e2e/daily.mjs",
     "dist": "electron-vite build && electron-builder --win nsis --x64",
     "dist:dir": "electron-vite build && electron-builder --win --x64 --dir",
-    "report": "vite-node tools/report.ts"
+    "report": "vite-node tools/report.ts",
+    "e2e:idle": "node tests/e2e/idle.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

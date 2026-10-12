@@ -62,7 +62,10 @@ export type Command =
   | { type: 'reco_reject' }
   | { type: 'session_start' }
   | { type: 'session_pause' }
-  | { type: 'session_resume' }
+  /** credit: 자리 비움으로 멈춘 구간을 작업 시간으로 인정하고 이어간다 */
+  | { type: 'session_resume'; credit?: boolean }
+  /** 시간 종료 알림에 응답이 없을 때 main이 보낸다(렌더러는 보내지 않음) */
+  | { type: 'time_up_expired' }
   | { type: 'session_end'; reason: 'done' | 'manual' | 'timeout' }
   | { type: 'answer_checkin'; answer: CheckinAnswer }
   | { type: 'save_reflection'; output: string; goalLink?: GoalLink; cause?: StuckCause }
@@ -78,6 +81,8 @@ export type ToastPayload =
   | { kind: 'time_up'; plannedMin: number; timeoutMs: number }
   /** late: 지정 시각이 한참 지났는데 아직 시작하지 않은 경우 */
   | { kind: 'day_start'; late: boolean; timeoutMs: number }
+  /** 자리를 비운 것으로 보고 since 시각으로 소급해 세션을 멈췄다. 응답할 때까지 남는다. */
+  | { kind: 'idle'; since: number; reason: 'checkin' | 'time_up'; plannedMin: number }
 
 /** 토스트 버튼이 main에 보내는 동작 */
 export const TOAST_ACTIONS = [
@@ -87,7 +92,9 @@ export const TOAST_ACTIONS = [
   'stuck', // 체크인: 막혔어요
   'dismiss', // 닫기 (막힘 대응 확인, 시간 종료 후 "조금 더")
   'start_break', // 휴식 시작
-  'resume_session', // 휴식 제안을 거절하고 계속
+  'resume_session', // 휴식 제안을 거절하고 계속 / 자리 비움 정지에서 이어가기
+  'resume_credit', // 자리 비움 정지에서 "계속 일하고 있었어요"(멈춘 구간을 작업 시간으로 인정)
+  'end_session', // 자리 비움 정지에서 끝내기(회고로 이동)
   'finish_session' // 시간 종료 후 마무리
 ] as const
 export type ToastAction = (typeof TOAST_ACTIONS)[number]

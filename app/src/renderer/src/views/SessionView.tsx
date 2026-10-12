@@ -8,6 +8,7 @@ export function SessionView({ snap, run }: { snap: AppSnapshot; run: Run }) {
   const { session, sessionTask } = snap
   const paused = session.phase === 'paused'
   const bySleep = paused && session.pauseCause === 'suspend'
+  const byIdle = paused && session.pauseCause === 'idle'
   const elapsed = elapsedMs(session, now)
 
   return (
@@ -18,6 +19,11 @@ export function SessionView({ snap, run }: { snap: AppSnapshot; run: Run }) {
           절전으로 멈췄어요. 자리를 비운 시간은 작업 시간에 넣지 않았습니다. 이어갈까요?
         </div>
       )}
+      {byIdle && (
+        <div className="banner info" data-testid="idle-note">
+          <span>자리를 비운 것 같아 멈췄어요. 멈춘 시각 이후는 작업 시간에 넣지 않았습니다.</span>
+        </div>
+      )}
       <h2 data-testid="session-title">{sessionTask?.title ?? ''}</h2>
       <div className="grow" />
       <div className="timer" data-testid="timer">{clock(elapsed)}</div>
@@ -25,7 +31,7 @@ export function SessionView({ snap, run }: { snap: AppSnapshot; run: Run }) {
       <div className="btns">
         {paused ? (
           <button className="btn primary" data-testid="resume" onClick={() => void run({ type: 'session_resume' })}>
-            {bySleep ? '이어가기' : '다시 시작'}
+            {bySleep || byIdle ? '이어가기' : '다시 시작'}
           </button>
         ) : (
           <button className="btn" data-testid="pause" onClick={() => void run({ type: 'session_pause' })}>
@@ -33,6 +39,11 @@ export function SessionView({ snap, run }: { snap: AppSnapshot; run: Run }) {
           </button>
         )}
       </div>
+      {byIdle && (
+        <button className="link" data-testid="resume-credit" onClick={() => void run({ type: 'session_resume', credit: true })}>
+          계속 일하고 있었어요 (멈춘 구간을 작업 시간으로 인정)
+        </button>
+      )}
       <div className="btns">
         <button className="btn" data-testid="finish-done" onClick={() => void run({ type: 'session_end', reason: 'done' })}>
           할 일 완료

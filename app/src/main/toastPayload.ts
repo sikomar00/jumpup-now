@@ -40,6 +40,13 @@ export function toastFor(effect: SessionEffect, snap: AppSnapshot, scale = 1): T
         plannedMin: snap.settings.sessionMin,
         timeoutMs: scaled(TIME_UP_TIMEOUT_MS, scale)
       }
+    case 'idle_pause':
+      return {
+        kind: 'idle',
+        since: effect.since,
+        reason: effect.reason,
+        plannedMin: snap.settings.sessionMin
+      }
   }
 }
 
@@ -60,5 +67,8 @@ export function isToastStale(payload: ToastPayload, snap: AppSnapshot): boolean 
       return phase !== 'paused' || snap.breakOpen
     case 'day_start':
       return snap.dayOpen // 다른 경로(메인 창·단축키)로 이미 시작했으면 닫는다
+    case 'idle':
+      // 위젯·메인 창에서 이미 이어갔거나 끝냈다면 닫는다
+      return phase !== 'paused' || snap.session.pauseCause !== 'idle'
   }
 }

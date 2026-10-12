@@ -119,6 +119,107 @@ describe('SessionMachine — tick(체크인·시간 종료)', () => {
   })
 })
 
+describe('SessionMachine — 자리 비움(무응답) 감지', () => {
+  /** t분에 체크인이 울리게 틱을 돌린다 */
+  const due = (s: SessionState, tMin: number) => run(s, { type: 'tick' }, tMin).state
+
+  it('체크인 2번 연속 무응답이면 첫 무응답 시각으로 소급해 자리 비움 정지한다', () => {
+    let s = due(start(), 10) // 10분에 첫 체크인
+    s = run(s, { type: 'answer_checkin', answer: 'timeout' }, 10.5).state
+    expect(s.phase).toBe('running') // 1번은 아직 정지하지 않는다
+    s = due(s, 20) // 20분에 두 번째 체크인
+    const r = run(s, { type: 'answer_checkin', answer: 'timeout' }, 20.5)
+
+    expect(r.state.phase).toBe('paused')
+    expect(r.state.pauseCause).toBe('idle')
+    expect(elapsedMs(r.state, T0 + 999 * MIN)).toBe(10 * MIN) // 첫 무응답이 울린 10분까지만
+    const pause = r.events.find((e) => e.type === 'session_pause')!
+    expect(pause).toMatchObject({ cause: 'idle', t: T0 + 10 * MIN })
+    expect(r.effects).toEqual([{ kind: 'idle_pause', since: T0 + 10 * MIN, reason: 'checkin' }])
+  })
+
+  it('무응답 사이에 응답이 있으면 연속이 끊긴다 (진행 중·막혔어요 모두)', () => {
+    for (const answer of ['ok', 'stuck'] as const) {
+      let s = due(start(), 10)
+      s = run(s, { type: 'answer_checkin', answer: 'timeout' }, 10.5).state
+      s = due(s, 20)
+      s = run(s, { type: 'answer_checkin', answer }, 20.2).state
+      s = due(s, 30)
+      const r = run(s, { type: 'answer_checkin', answer: 'timeout' }, 30.5)
+      expect(r.state.phase).toBe('running') // 다시 1번째 무응답일 뿐
+      expect(r.state.timeoutStreak).toBe(1)
+    }
+  })
+
+  it('사용자가 직접 정지한 상태의 무응답은 자리 비움으로 세지 않는다', () => {
+    let s = due(start(), 10)
+    s = run(s, { type: 'pause', cause: 'user' }, 11).state
+    const r = run(s, { type: 'answer_checkin', answer: 'timeout' }, 12)
+    expect(r.state.timeoutStreak).toBe(0)
+    expect(r.effects).toEqual([])
+  })
+
+  it('시간 종료 알림을 아무도 받지 않으면 알림이 울린 계획 시간 시점으로 소급해 정지한다', () => {
+    let s = start()
+    for (const m of [10, 20]) {
+      s = due(s, m)
+      s = run(s, { type: 'answer_checkin', answer: 'ok' }, m + 0.1).state
+    }
+    s = due(s, 25) // 25분 시간 종료
+    expect(s.timeUpAt).toBe(T0 + 25 * MIN)
+    const r = run(s, { type: 'time_up_expired' }, 26)
+    expect(r.state.pauseCause).toBe('idle')
+    expect(elapsedMs(r.state, T0 + 999 * MIN)).toBe(25 * MIN)
+    expect(r.effects).toEqual([{ kind: 'idle_pause', since: T0 + 25 * MIN, reason: 'time_up' }])
+  })
+
+  it('time_up_expired는 실행 중이 아니거나 시간 종료 전이면 무시한다', () => {
+    expect(run(start(), { type: 'time_up_expired' }, 5).events).toEqual([]) // 아직 25분 전
+    expect(run(initialSessionState(), { type: 'time_up_expired' }, 5).events).toEqual([])
+  })
+
+  function idlePausedAt10() {
+    let s = due(start(), 10)
+    s = run(s, { type: 'answer_checkin', answer: 'timeout' }, 10.5).state
+    s = due(s, 20)
+    return run(s, { type: 'answer_checkin', answer: 'timeout' }, 20.5).state // 10분으로 소급 정지됨
+  }
+
+  it('"계속 일하고 있었어요"(credit)로 이어가면 멈춘 구간을 작업 시간으로 인정한다', () => {
+    const paused = idlePausedAt10()
+    const r = run(paused, { type: 'resume', credit: true }, 40)
+    expect(r.state.phase).toBe('running')
+    expect(r.state.pauseCause).toBeNull()
+    expect(elapsedMs(r.state, T0 + 40 * MIN)).toBe(40 * MIN) // 정지가 없었던 것처럼
+    expect(r.events[0]).toMatchObject({ type: 'session_resume', credited: true, t: T0 + 10 * MIN })
+  })
+
+  it('그냥 이어가기는 멈춘 구간을 인정하지 않는다', () => {
+    const r = run(idlePausedAt10(), { type: 'resume' }, 40)
+    expect(elapsedMs(r.state, T0 + 40 * MIN)).toBe(10 * MIN)
+    expect(r.events[0]).toMatchObject({ type: 'session_resume', t: T0 + 40 * MIN })
+    expect((r.events[0] as { credited?: boolean }).credited).toBeUndefined()
+  })
+
+  it('자리 비움이 아닌 정지에 credit을 줘도 일반 재개로 동작한다', () => {
+    const s = run(start(), { type: 'pause', cause: 'user' }, 5).state
+    const r = run(s, { type: 'resume', credit: true }, 30)
+    expect(elapsedMs(r.state, T0 + 30 * MIN)).toBe(5 * MIN)
+  })
+
+  it('재개하면 무응답 연속 카운터가 초기화된다', () => {
+    const r = run(idlePausedAt10(), { type: 'resume' }, 40)
+    expect(r.state).toMatchObject({ timeoutStreak: 0, idleSince: null, idlePausedAt: null })
+  })
+
+  it('abort: 회고 없이 지정 시각에 recovered로 세션을 끝내고 idle로 돌아간다', () => {
+    const r = run(start(), { type: 'abort', at: T0 + 7 * MIN }, 50)
+    expect(r.state.phase).toBe('idle')
+    expect(r.events[0]).toMatchObject({ type: 'session_end', reason: 'recovered', t: T0 + 7 * MIN })
+    expect(run(initialSessionState(), { type: 'abort', at: T0 }, 1).events).toEqual([])
+  })
+})
+
 describe('SessionMachine — 막힘 대응', () => {
   const askAt = (s: SessionState, tMin: number) => run(s, { type: 'tick' }, tMin).state
 
