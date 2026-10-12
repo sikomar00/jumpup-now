@@ -1,6 +1,6 @@
 {
   "name": "jumpup-now",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "생각 과잉 → 착수: 지금 할 일 하나를 시작시키고 실질 작업비율을 측정하는 데스크톱 앱",
   "scripts": {

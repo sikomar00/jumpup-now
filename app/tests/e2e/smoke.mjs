@@ -81,9 +81,20 @@ try {
   log(`디자인: Pretendard 번들 폰트 로드, 포커스 링 ${design.outlineWidth}px(2px 장치 픽셀 정수화), 입력 높이 48`)
   await page.getByLabel('큰 목표').fill('3개월 안에 포트폴리오 완성')
   await page.getByRole('button', { name: '다음' }).click()
-  await page.getByRole('button', { name: '10:00' }).click()
-  await page.getByRole('button', { name: '50%' }).click()
+  // 직접 입력: 프리셋에 없는 시각·목표 비율
+  await tid(page, 'ob-time-custom').click()
+  await tid(page, 'ob-time').fill('08:30')
+  await tid(page, 'ob-target-custom').click()
+  await tid(page, 'ob-target').fill('0')
+  await tid(page, 'ob-invalid').waitFor()
+  assert.equal(await page.getByRole('button', { name: '다음' }).isDisabled(), true, '범위 밖 목표는 다음으로 넘어갈 수 없다')
+  await tid(page, 'ob-target').fill('150')
+  assert.equal(await page.getByRole('button', { name: '다음' }).isDisabled(), true)
+  await tid(page, 'ob-target').fill('35')
+  await tid(page, 'ob-invalid').waitFor({ state: 'detached' })
+  await shot(page, '01b-onboarding-custom')
   await page.getByRole('button', { name: '다음' }).click()
+  log('온보딩 직접 입력: 08:30 · 35% (범위 밖 값은 막힘)')
   // 자동 실행은 옵트인: 체크해도 개발(패키징 전) 실행에서는 OS 로그인 항목을 건드리지 않아야 한다.
   assert.equal(await tid(page, 'autolaunch').isChecked(), false, '자동 실행은 기본 꺼짐')
   await tid(page, 'autolaunch').check()
@@ -91,6 +102,8 @@ try {
   await tid(page, 'home-before-day').waitFor()
   const savedSettings = JSON.parse(readFileSync(join(dataDir, 'settings.json'), 'utf8'))
   assert.equal(savedSettings.autoLaunch, true, '선택한 자동 실행 값이 설정에 저장됨')
+  assert.equal(savedSettings.dayStartTime, '08:30', '직접 입력한 시작 시각이 저장됨')
+  assert.equal(savedSettings.successTargetPct, 35, '직접 입력한 목표 비율이 저장됨')
   assert.equal(
     await app.evaluate(({ app: a }) => a.getLoginItemSettings().openAtLogin),
     false,
@@ -211,7 +224,7 @@ try {
   await shot(page, '07-break')
   await page.getByRole('button', { name: '휴식 끝' }).click()
   await tid(page, 'home').waitFor()
-  assert.match(await tid(page, 'ratio').innerText(), /목표 50%/)
+  assert.match(await tid(page, 'ratio').innerText(), /목표 35%/)
   await shot(page, '08-home-after')
   await tid(page, 'day-end').click()
   await tid(page, 'summary').waitFor() // 하루를 끝내면 오늘 요약이 바로 열린다

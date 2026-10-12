@@ -243,6 +243,9 @@ export class AppController {
           autoLaunch: cmd.autoLaunch ?? prev.autoLaunch,
           onboarded: true
         })
+        // 범위를 벗어난 값을 조용히 기본값으로 바꾸지 않고 항목명과 함께 거부한다(직접 입력 대비).
+        if (next.successTargetPct !== cmd.successTargetPct) throw new Error(`설정 값이 올바르지 않습니다: ${SETTING_LABELS.successTargetPct}`)
+        if (next.dayStartTime !== cmd.dayStartTime) throw new Error(`설정 값이 올바르지 않습니다: ${SETTING_LABELS.dayStartTime}`)
         this.deps.applySettings?.(next, prev)
         this.settings = this.deps.settingsStore.update(next)
         return

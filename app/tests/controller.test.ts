@@ -52,6 +52,24 @@ describe('온보딩', () => {
     expect(ctrl.snapshot().settings.onboarded).toBe(false)
   })
 
+  it('직접 입력한 시각·목표 비율(프리셋 밖의 값)이 그대로 저장된다', () => {
+    const { ctrl } = make()
+    ctrl.dispatch({ ...onboard, dayStartTime: '08:30', successTargetPct: 35 })
+    expect(ctrl.snapshot().settings).toMatchObject({ dayStartTime: '08:30', successTargetPct: 35, onboarded: true })
+    expect(make().ctrl.snapshot().settings).toMatchObject({ dayStartTime: '08:30', successTargetPct: 35 })
+  })
+
+  it('범위를 벗어난 직접 입력은 기본값으로 바꾸지 않고 항목명과 함께 거부한다', () => {
+    const { ctrl } = make()
+    for (const bad of [0, 101, -5, Number.NaN]) {
+      expect(() => ctrl.dispatch({ ...onboard, successTargetPct: bad })).toThrow('목표 실질 작업비율')
+    }
+    for (const bad of ['25:00', '9:00', '', '09:60']) {
+      expect(() => ctrl.dispatch({ ...onboard, dayStartTime: bad })).toThrow('하루 시작 알림')
+    }
+    expect(ctrl.snapshot().settings.onboarded).toBe(false) // 거부되면 온보딩이 끝나지 않는다
+  })
+
   it('완료하면 설정이 저장되고 재시작 후에도 유지된다', () => {
     const { ctrl } = make()
     ctrl.dispatch(onboard)
