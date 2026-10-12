@@ -1,0 +1,17 @@
+{
+  "name": "jumpup-now",
+  "version": "0.1.0",
+  "private": true,
+  "description": "생각 과잉 → 착수: 지금 할 일 하나를 시작시키고 실질 작업비율을 측정하는 데스크톱 앱",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

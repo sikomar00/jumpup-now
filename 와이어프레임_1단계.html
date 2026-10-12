@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JumpUp Now 1단계 와이어프레임</title>
+<style>
+  :root{
+    --bg:#f4f4f2; --panel:#ffffff; --ink:#1d1d1b; --sub:#6b6b66; --line:#d6d6d0;
+    --accent:#2f6fed; --accent-ink:#fff; --warn:#c2410c; --soft:#eef2fd; --muted:#ecebe6;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#161616; --panel:#212121; --ink:#ededeb; --sub:#9a9a94; --line:#3a3a37;
+      --accent:#6c9bff; --accent-ink:#0d1b3d; --warn:#fb923c; --soft:#1d2740; --muted:#2c2c29; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif}
+  header{padding:28px 24px 8px;max-width:1280px;margin:0 auto}
+  h1{font-size:22px;margin:0 0 4px}
+  header p{margin:0;color:var(--sub)}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;font-size:13px;color:var(--sub)}
+  .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:99px;background:var(--soft);color:var(--accent);font-weight:600;margin-right:4px}
+  section{max-width:1280px;margin:0 auto;padding:20px 24px 4px}
+  section>h2{font-size:15px;margin:0 0 12px;color:var(--sub);font-weight:600;letter-spacing:.02em}
+  .row{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+  figure{margin:0}
+  figcaption{font-size:13px;margin:8px 2px 0;color:var(--sub)}
+  figcaption b{color:var(--ink)}
+  .win{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  .bar{height:28px;background:var(--muted);border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 10px;font-size:12px;color:var(--sub);gap:6px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--line)}
+  .body{padding:22px 22px 20px;display:flex;flex-direction:column;gap:14px}
+  .w-main{width:400px}
+  .small{width:300px}
+  h3{margin:0;font-size:17px}
+  .step{font-size:12px;color:var(--sub)}
+  .lead{color:var(--sub);font-size:13px;margin:0}
+  .input{border:1.5px solid var(--line);border-radius:8px;padding:10px 12px;color:var(--sub);background:var(--bg);font-size:14px}
+  .btn{display:block;text-align:center;border-radius:8px;padding:11px 14px;font-weight:600;font-size:14px;border:1.5px solid var(--line);background:var(--panel);color:var(--ink)}
+  .btn.p{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+  .btn.g{border-style:dashed;color:var(--sub);font-weight:500}
+  .btn.s{padding:8px 12px;font-size:13px}
+  .btns{display:flex;gap:8px}.btns .btn{flex:1}
+  .link{font-size:12px;color:var(--sub);text-align:center;text-decoration:underline}
+  .card{border:1.5px solid var(--accent);background:var(--soft);border-radius:10px;padding:16px}
+  .card .big{font-size:20px;font-weight:700;margin:4px 0}
+  .card .meta{font-size:12px;color:var(--sub)}
+  .list{border:1px solid var(--line);border-radius:8px}
+  .item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line);font-size:14px}
+  .item:last-child{border-bottom:0}
+  .box{width:15px;height:15px;border:1.5px solid var(--sub);border-radius:4px;flex:none}
+  .grow{flex:1}
+  .chip{font-size:11px;padding:1px 8px;border-radius:99px;border:1px solid var(--line);color:var(--sub)}
+  .chip.hot{border-color:var(--warn);color:var(--warn)}
+  .seg{display:flex;gap:6px;flex-wrap:wrap}
+  .seg span{border:1.5px solid var(--line);border-radius:99px;padding:5px 12px;font-size:13px}
+  .seg span.on{border-color:var(--accent);background:var(--soft);color:var(--accent);font-weight:600}
+  .progress{height:8px;border-radius:99px;background:var(--muted);overflow:hidden}
+  .progress i{display:block;height:100%;background:var(--accent)}
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .stat{border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+  .stat b{display:block;font-size:20px}
+  .stat span{font-size:12px;color:var(--sub)}
+  .ghost{opacity:.5}
+  /* widget */
+  .widget{display:flex;align-items:center;gap:10px;background:#111;color:#f3f3f0;border-radius:99px;padding:8px 8px 8px 16px;width:300px;font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+  .widget .t{font-variant-numeric:tabular-nums;font-weight:700;font-size:15px}
+  .widget .n{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .widget .ic{width:26px;height:26px;border-radius:50%;background:#2c2c2a;display:grid;place-items:center;font-size:11px}
+  .desk{background:linear-gradient(135deg,var(--muted),var(--bg));border:1px dashed var(--line);border-radius:10px;padding:18px;width:340px;height:132px;position:relative}
+  .desk .widget{position:absolute;right:18px;bottom:18px}
+  .toast{width:320px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.14);padding:14px;display:flex;flex-direction:column;gap:10px}
+  .toast .h{font-size:12px;color:var(--sub)}
+  .toast .m{font-weight:700;font-size:15px}
+  .note{max-width:1280px;margin:8px auto 0;padding:0 24px;font-size:13px;color:var(--sub)}
+  .flow{max-width:1280px;margin:0 auto;padding:6px 24px 0}
+  .flow div{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:13px}
+  .flow span.n{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:3px 9px}
+  .flow span.a{color:var(--sub)}
+  footer{max-width:1280px;margin:0 auto;padding:24px;color:var(--sub);font-size:13px}
+  @media (max-width:520px){ .w-main,.small,.desk,.toast{width:100%} .widget{width:100%} }
+</style>
+</head>
+<body>
+<header>
+  <h1>JumpUp Now — 1단계 와이어프레임 (AI 없음)</h1>
+  <p>기획문서 v1.0 §3·§4 기준. 회색조 저해상도 — 레이아웃·문구·흐름 확인용입니다.</p>
+  <div class="legend">
+    <span><span class="tag">F1</span>할 일·규칙 추천</span>
+    <span><span class="tag">F2</span>상시 위젯</span>
+    <span><span class="tag">F3</span>주기 체크인</span>
+    <span><span class="tag">F4a</span>세션 로그·요약</span>
+    <span><span class="tag">F6</span>먼저 시작시키는 장치</span>
+  </div>
+</header>
+
+<section>
+  <h2>화면 흐름</h2>
+</section>
+<div class="flow"><div>
+  <span class="n">온보딩 ①②③</span><span class="a">→</span>
+  <span class="n">하루 시작 알림</span><span class="a">→</span>
+  <span class="n">홈 · 지금 뭐 하지?</span><span class="a">→</span>
+  <span class="n">추천 카드</span><span class="a">→</span>
+  <span class="n">세션 진행 (위젯)</span><span class="a">→</span>
+  <span class="n">체크인 (10분마다)</span><span class="a">→</span>
+  <span class="n">세션 회고</span><span class="a">→</span>
+  <span class="n">하루 요약</span>
+</div></div>
+
+<section>
+  <h2>1. 온보딩 — 결정은 화면당 1개</h2>
+  <div class="row">
+    <figure>
+      <div class="win w-main"><div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>JumpUp Now</div>
+        <div class="body">
+          <div class="step">1 / 3</div>
+          <h3>지금 가장 큰 목표 한 줄</h3>
+          <p class="lead">세션이 끝날 때마다 이 목표에 가까워졌는지 묻습니다.</p>
+          <div class="input">예) 이 분야에서 3개월 안에 포트폴리오 1개 완성</div>
+          <div class="btn p">다음</div>
+        </div></div>
+      <figcaption><b>① 목표</b> · 방향 점검의 기준</figcaption>
+    </figure>
+    <figure>
+      <div class="win w-main"><div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>JumpUp Now</div>
+        <div class="body">
+          <div class="step">2 / 3</div>
+          <h3>하루 시작 알림과 성공 기준</h3>
+          <div><div class="lead" style="margin-bottom:6px">하루 시작 알림 시각</div>
+            <div class="seg"><span>08:00</span><span class="on">09:00</span><span>10:00</span><span>직접</span></div></div>
+          <div><div class="lead" style="margin-bottom:6px">목표 실질 작업비율 (현재 약 20%)</div>
+            <div class="seg"><span>30%</span><span class="on">40%</span><span>50%</span><span>직접</span></div></div>
+          <div class="btn p">다음</div>
+        </div></div>
+      <figcaption><b>② 기본값 선택</b> · 기본값이 선택되어 있어 1탭이면 통과 <span class="tag">F6</span></figcaption>
+    </figure>
+    <figure>
+      <div class="win w-main"><div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>JumpUp Now</div>
+        <div class="body">
+          <div class="step">3 / 3</div>
+          <h3>AI 연결 (선택)</h3>
+          <p class="lead">연결하지 않아도 바로 쓸 수 있습니다. AI는 할 일을 더 작게 쪼개줍니다.</p>
+          <div class="btn p">나중에 — 바로 시작</div>
+          <div class="btn g ghost">AI 연결하기 (2단계에서 제공)</div>
+          <div class="link">부팅 시 자동 실행 켜기</div>
+        </div></div>
+      <figcaption><b>③ AI 연결</b> · 1단계는 "나중에"만 활성. 자동 실행은 옵트인</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section>
+  <h2>2. 앱이 먼저 시작시킴 — 하루 시작 알림 · 전역 단축키 <span class="tag">F6</span></h2>
+  <div class="row">
+    <figure>
+      <div class="toast">
+        <div class="h">JumpUp Now · 09:00</div>
+        <div class="m">오늘 시작하세요.</div>
+        <div class="btns"><div class="btn p s">하루 시작</div><div class="btn s">10분 뒤</div></div>
+      </div>
+      <figcaption><b>시작 알림</b> · 탭 한 번으로 시나리오 3(추천 카드)으로 이동</figcaption>
+    </figure>
+    <figure>
+      <div class="win small"><div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>Ctrl + Alt + J</div>
+        <div class="body" style="align-items:center;text-align:center">
+          <h3>지금 뭐 하지?</h3>
+          <p class="lead">어느 창에서든 단축키로 호출</p>
+          <div class="btn p" style="width:100%">추천 받기</div>
+        </div></div>
+      <figcaption><b>전역 단축키 미니 창</b> · 막힌 순간 앱을 찾지 않아도 됨</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section>
+  <h2>3. 홈 · 추천 · 할 일 목록 <span class="tag">F1</span></h2>
+  <div class="row">
+    <figure>
+      <div class="win w-main"><div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>JumpUp Now</div>
+        <div class="body">
+          <div style="display:flex;justify-content:space-between;align-items:baseline"><h3>오늘 09:12 시작</h3><span class="step">실질 0% · 목표 40%</span></div>
+          <div class="progress"><i style="width:0%"></i></div>
+          <div class="btn p" style="padding:20px;font-size:17px">지금 뭐 하지?</div>
+          <div class="link">할 일 목록 (4)</div>
+        </div></div>
+      <figcaption><b>홈</b> · 화면의 주인공은 버튼 하나</figcaption>
+    </figure>
+    <figure>
+      <div class="win w-main"><div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>JumpUp Now</div>
+        <div class="body">
+          <div class="card">
+            <div class="meta">지금 할 일</div>
+            <div class="big">보고서 개요 쓰기</div>
+            <div>처음 5분: 제목 3개만 적으세요.</div>
+            <div class="meta" style="margin-top:6px">이유 · 마감 내일 / 크기 작음</div>
+          </div>
+          <div class="btn p" style="padding:14px">시작 (25분)</div>
+          <div class="link">이건 못 하겠어요</div>
+        </div></div>
+      <figcaption><b>추천 카드</b> · 항상 1개. 선택지는 [시작]뿐. "못 하겠어요"는 작은 링크 (규칙 기반: 다음 후보 1개로 교체)</figcaption>
+    </figure>
+    <figure>
+      <div class="win w-main"><div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>할 일 목록</div>
+        <div class="body">
+          <div class="list">
+            <div class="item"><span class="box"></span><span class="grow">보고서 개요 쓰기</span><span class="chip hot">내일</span><span class="chip">작음</span></div>
+            <div class="item"><span class="box"></span><span class="grow">자료 5개 읽기</span><span class="chip">금요일</span><span class="chip">중간</span></div>
+            <div class="item"><span class="box"></span><span class="grow">발표 자료 초안</span><span class="chip">다음 주</span><span class="chip">큼</span></div>
+            <div class="item"><span class="box"></span><span class="grow">이메일 정리</span><span class="chip">—</span><span class="chip">작음</span></div>
+          </div>
+          <div class="input">+ 할 일 추가 (제목만 입력하면 됨)</div>
+          <div class="step">마감과 크기(작음/중간/큼)는 선택. 입력이 없으면 목록 순서로 추천</div>
+        </div></div>
+      <figcaption><b>할 일 목록</b> · 입력 마찰 최소화 — 제목만 필수</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section>
+  <h2>4. 진행 중 — 상시 위젯 · 체크인 <span class="tag">F2</span><span class="tag">F3</span></h2>
+  <div class="row">
+    <figure>
+      <div class="desk"><div class="widget"><span class="t">12:34</span><span class="n">보고서 개요 쓰기</span><span class="ic">❚❚</span><span class="ic">■</span></div></div>
+      <figcaption><b>상시 위젯</b> · always-on-top, 드래그 이동. 일시정지(❚❚) / 종료(■)</figcaption>
+    </figure>
+    <figure>
+      <div class="toast">
+        <div class="h">JumpUp Now · 체크인</div>
+        <div class="m">지금 하던 거 이어가고 있어요?</div>
+        <div class="btns"><div class="btn p s">진행 중</div><div class="btn s">막혔어요</div></div>
+      </div>
+      <figcaption><b>체크인 알림</b> · 10분마다. 2탭, 이유는 묻지 않음</figcaption>
+    </figure>
+    <figure>
+      <div class="toast">
+        <div class="h">막혔어요 · 1회</div>
+        <div class="m">그럼 제목 1개만 적으세요. 2분.</div>
+        <div class="btns"><div class="btn p s">2분만 하기</div></div>
+      </div>
+      <figcaption><b>막힘 대응</b> · 앱이 더 작은 행동 1개를 결정해 제시 (규칙 기반: 시간 단위 축소 문구)</figcaption>
+    </figure>
+    <figure>
+      <div class="toast">
+        <div class="h">막혔어요 · 3회 연속</div>
+        <div class="m">5분 쉬세요. 돌아오면 더 작은 걸 드릴게요.</div>
+        <div class="btns"><div class="btn p s">5분 휴식 시작</div></div>
+      </div>
+      <figcaption><b>연속 막힘</b> · 휴식 후 더 작은 할 일 1개 재추천</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section>
+  <h2>5. 세션 종료 · 하루 요약 <span class="tag">F4a</span></h2>
+  <div class="row">
+    <figure>
+      <div class="win w-main"><div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>세션 종료 · 25:00</div>
+        <div class="body">
+          <h3>한 줄만 남기세요</h3>
+          <div class="input">산출물: 개요 제목 3개 작성</div>
+          <div><div class="lead" style="margin-bottom:6px">목표에 가까워졌나요?</div>
+            <div class="seg"><span class="on">예</span><span>아니오</span><span>모르겠음</span></div></div>
+          <div><div class="lead" style="margin-bottom:6px">막힌 원인 (선택)</div>
+            <div class="seg"><span>불안</span><span>모호함</span><span>피곤</span><span>딴짓</span><span>기타</span></div></div>
+          <div class="btns"><div class="btn p">저장하고 다음 세션</div><div class="btn">쉬기</div></div>
+        </div></div>
+      <figcaption><b>세션 회고</b> · 산출물 1줄 + 1탭 + 선택 태그. 원인 태그는 막힘이 있었을 때만 표시</figcaption>
+    </figure>
+    <figure>
+      <div class="win w-main"><div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>오늘 요약</div>
+        <div class="body">
+          <div style="display:flex;justify-content:space-between;align-items:baseline"><h3>실질 작업 38%</h3><span class="step">목표 40%</span></div>
+          <div class="progress"><i style="width:95%"></i></div>
+          <div class="stats">
+            <div class="stat"><b>3시간 02분</b><span>실질 작업 / 8시간</span></div>
+            <div class="stat"><b>6분</b><span>착수 지연 (평균)</span></div>
+            <div class="stat"><b>4회</b><span>막혔어요</span></div>
+            <div class="stat"><b>5개</b><span>세션 완료</span></div>
+          </div>
+          <div class="list"><div class="item"><span class="grow">개요 제목 3개 작성</span><span class="chip">목표 ✓</span></div>
+            <div class="item"><span class="grow">자료 2개 읽기</span><span class="chip">목표 ?</span></div></div>
+          <div class="btn">하루 종료</div>
+        </div></div>
+      <figcaption><b>하루 요약</b> · 분모는 하루 시작~종료 사이(휴식 제외). 기준선 수집용 추이는 3단계</figcaption>
+    </figure>
+  </div>
+</section>
+
+<div class="note">※ 설정 화면(간격, 알림 시각, 단축키, 자동 실행)은 온보딩 외에는 트레이 메뉴 안에 숨깁니다 — 화면당 결정 1개 원칙.</div>
+<footer>다음: 열린 질문(규칙 기반 추천 규칙·시작 알림 시각·종료 버튼 없이 꺼졌을 때)을 이 화면 기준으로 확정 → 기술 설계.</footer>
+</body>
+</html>
