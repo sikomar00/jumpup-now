@@ -2,30 +2,23 @@
 // 사용법: npm run build && npm run e2e   (스크린샷 폴더: SHOTS_DIR 환경 변수, 기본은 OS 임시 폴더)
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { _electron as electron } from 'playwright-core'
+import { launchOptions, mode } from './launch.mjs'
 
-const require = createRequire(import.meta.url)
-const appDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const dataDir = mkdtempSync(join(tmpdir(), 'jumpup-e2e-'))
 const shots = process.env.SHOTS_DIR ?? join(tmpdir(), 'jumpup-shots')
 mkdirSync(shots, { recursive: true })
 
+console.log(`실행 대상: ${mode()}`)
 const errors = []
 const log = (m) => console.log(`✓ ${m}`)
 
 const openApps = new Set()
 
 async function launch() {
-  const app = await electron.launch({
-    executablePath: require('electron'),
-    args: [appDir],
-    cwd: appDir,
-    env: { ...process.env, JUMPUP_DATA_DIR: dataDir }
-  })
+  const app = await electron.launch(launchOptions({ JUMPUP_DATA_DIR: dataDir }))
   openApps.add(app)
   app.on('close', () => openApps.delete(app))
   const page = await app.firstWindow()

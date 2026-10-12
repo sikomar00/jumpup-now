@@ -13,7 +13,10 @@
     "e2e": "node tests/e2e/smoke.mjs",
     "e2e:checkin": "node tests/e2e/checkin.mjs",
     "e2e:all": "npm run e2e && npm run e2e:checkin && npm run e2e:daily",
-    "e2e:daily": "node tests/e2e/daily.mjs"
+    "e2e:daily": "node tests/e2e/daily.mjs",
+    "dist": "electron-vite build && electron-builder --win nsis --x64",
+    "dist:dir": "electron-vite build && electron-builder --win --x64 --dir",
+    "report": "vite-node tools/report.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
@@ -21,6 +24,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5.2.0",
     "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "playwright-core": "^1.64.0",
     "react": "^19.3.0",
@@ -29,5 +33,41 @@
     "vite": "^7.3.7",
     "vitest": "^2.1.0"
   },
-  "main": "./out/main/index.js"
+  "main": "./out/main/index.js",
+  "productName": "JumpUp Now",
+  "author": "sikomar00",
+  "homepage": "https://github.com/sikomar00/tooMuchThinkerSolution",
+  "build": {
+    "appId": "com.sikomar00.jumpup-now",
+    "productName": "JumpUp Now",
+    "copyright": "Copyright (c) sikomar00",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "shortcutName": "JumpUp Now",
+      "artifactName": "JumpUpNow-Setup-${version}.${ext}"
+    }
+  }
 }

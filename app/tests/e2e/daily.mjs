@@ -3,14 +3,11 @@
 // 사용법: npm run build && npm run e2e:daily
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { _electron as electron } from 'playwright-core'
+import { launchOptions, mode } from './launch.mjs'
 
-const require = createRequire(import.meta.url)
-const appDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const dataDir = mkdtempSync(join(tmpdir(), 'jumpup-e2e-daily-'))
 const shots = process.env.SHOTS_DIR ?? join(tmpdir(), 'jumpup-shots')
 mkdirSync(shots, { recursive: true })
@@ -26,6 +23,7 @@ writeFileSync(
   JSON.stringify({ goal: '포트폴리오 완성', successTargetPct: 40, dayStartTime: hhmm, shortcut: 'Ctrl+Alt+Shift+F11', sessionMin: 25, checkinMin: 10, onboarded: true })
 )
 
+console.log(`실행 대상: ${mode()}`)
 const errors = []
 const log = (m) => console.log(`✓ ${m}`)
 const tid = (page, id) => page.getByTestId(id)
@@ -33,12 +31,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 let app
 try {
-  app = await electron.launch({
-    executablePath: require('electron'),
-    args: [appDir],
-    cwd: appDir,
-    env: { ...process.env, JUMPUP_DATA_DIR: dataDir, JUMPUP_TIME_SCALE: '60', JUMPUP_E2E: '1' }
-  })
+  app = await electron.launch(launchOptions({ JUMPUP_DATA_DIR: dataDir, JUMPUP_TIME_SCALE: '60', JUMPUP_E2E: '1' }))
   const page = await app.firstWindow()
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
   page.on('console', (m) => m.type() === 'error' && errors.push(`console: ${m.text()}`))

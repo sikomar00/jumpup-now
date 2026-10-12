@@ -17,9 +17,19 @@
 
 테스트 전용 환경 변수: `JUMPUP_DATA_DIR`(데이터 경로), `JUMPUP_TIME_SCALE`(시간 배율), `JUMPUP_E2E=1`(e2e 훅 노출). 일반 사용에서는 설정하지 않는다.
 
+## 배포·도그푸딩
+| 명령 | 설명 |
+|---|---|
+| `npm run dist` | NSIS 설치파일 생성 → `release/JumpUpNow-Setup-<버전>.exe` (x64, 사용자 단위 설치, **서명 없음**) |
+| `npm run dist:dir` | 설치 없이 실행해 볼 수 있는 `release/win-unpacked/` 만 생성 |
+| `npm run report` | 이벤트 로그에서 날짜별 지표와 **기준선**(측정 30분 이상인 날의 중앙값)을 출력. 읽기 전용. `-- <폴더>`로 다른 경로 지정 |
+
+- 패키징된 실행파일에 e2e를 돌리려면: `JUMPUP_EXE="release/win-unpacked/JumpUp Now.exe" npm run e2e:all` (격리된 임시 데이터 경로를 쓰므로 실제 데이터·로그인 항목은 건드리지 않는다)
+- 설치 후 확인할 항목: [수동체크리스트.md](../수동체크리스트.md), 사용·판단 방법: [도그푸딩가이드.md](../도그푸딩가이드.md)
+
 ## 데이터 위치
-`%APPDATA%/jumpup-now/` 아래 `events/YYYY-MM.jsonl`(이벤트 로그), `settings.json`.
-개발·테스트에서 분리하려면 `JUMPUP_DATA_DIR` 환경 변수로 경로를 바꾼다.
+설치된 앱: `%APPDATA%\JumpUp Now\` 아래 `events\YYYY-MM.jsonl`(이벤트 로그, 추가 전용), `settings.json`. 삭제해도 데이터는 남는다.
+개발·테스트에서 분리하려면 `JUMPUP_DATA_DIR` 환경 변수로 경로를 바꾼다. 이 변수가 지정된 실행은 **부팅 자동 실행을 OS에 반영하지 않는다**(테스트가 사용자의 로그인 항목을 바꾸지 못하도록).
 
 ## 구조
 - `src/domain/` — Electron 의존 없는 순수 로직 (이벤트, 통계, 세션 상태 머신, 추천, 복구)

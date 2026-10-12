@@ -18,6 +18,9 @@ import { dayStartToast, toastFor } from './toastPayload'
 import { appIcon, trayIcon } from './trayIcon'
 import { WidgetWindow } from './widget'
 
+// Windows 알림·작업 표시줄 그룹핑에 쓰이는 앱 ID (electron-builder appId와 같아야 한다)
+app.setAppUserModelId('com.sikomar00.jumpup-now')
+
 // 테스트·개발에서 실제 사용자 데이터와 섞이지 않도록 데이터 경로를 바꿀 수 있다.
 if (process.env.JUMPUP_DATA_DIR) app.setPath('userData', process.env.JUMPUP_DATA_DIR)
 // 테스트 전용: 세션·체크인 시간을 N배 빠르게 (예: 60이면 10분 → 10초)
@@ -114,11 +117,12 @@ function registerShortcut(accelerator: string, previous?: string): void {
 }
 
 /**
- * 부팅 시 자동 실행. 개발·테스트(패키징되지 않은 실행)에서는 electron.exe 자체가
- * 로그인 항목으로 등록되어 버리므로 절대 건드리지 않는다.
+ * 부팅 시 자동 실행. 아래 경우에는 OS 로그인 항목을 절대 건드리지 않는다.
+ * - 패키징되지 않은 실행(개발): electron.exe 자체가 등록되어 버린다.
+ * - 데이터 경로를 따로 지정한 실행(JUMPUP_DATA_DIR, 테스트): 설치된 앱을 테스트해도 사용자의 실제 로그인 항목이 바뀌면 안 된다.
  */
 function applyLoginItem(enabled: boolean): void {
-  if (!app.isPackaged) return
+  if (!app.isPackaged || process.env.JUMPUP_DATA_DIR) return
   app.setLoginItemSettings({ openAtLogin: enabled, args: enabled ? ['--hidden'] : [] })
 }
 
